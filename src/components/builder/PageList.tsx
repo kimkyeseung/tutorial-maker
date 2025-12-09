@@ -15,6 +15,8 @@ type PageListProps = {
 type ThumbnailData = {
   url: string
   mediaType: 'video' | 'image'
+  fileName: string
+  mediaId: string
 }
 
 const PageList: React.FC<PageListProps> = ({
@@ -67,7 +69,11 @@ const PageList: React.FC<PageListProps> = ({
       const newThumbnails: Record<string, ThumbnailData> = {}
 
       for (const page of pages) {
-        if (page.mediaId && !thumbnails[page.id]) {
+        // mediaId가 변경되었거나 썸네일이 없는 경우 다시 로드
+        const existingThumbnail = thumbnails[page.id]
+        const needsReload = page.mediaId && (!existingThumbnail || existingThumbnail.mediaId !== page.mediaId)
+
+        if (needsReload) {
           const media = await getMediaFile(page.mediaId)
           if (media) {
             let url: string
@@ -76,7 +82,7 @@ const PageList: React.FC<PageListProps> = ({
             } else {
               url = await captureVideoThumbnail(media.blob)
             }
-            newThumbnails[page.id] = { url, mediaType: page.mediaType }
+            newThumbnails[page.id] = { url, mediaType: page.mediaType, fileName: media.name, mediaId: page.mediaId }
           }
         }
       }
@@ -177,8 +183,15 @@ const PageList: React.FC<PageListProps> = ({
                     </div>
                     <div className='mt-0.5 text-xs text-gray-500'>
                       {page.mediaType === 'video' ? '🎥' : '🖼️'}{' '}
-                      버튼 {page.buttons.length} • 터치 영역{' '}
-                      {page.touchAreas.length}
+                      {thumbnails[page.id]?.fileName ? (
+                        <span className='truncate' title={thumbnails[page.id].fileName}>
+                          {thumbnails[page.id].fileName.length > 20
+                            ? thumbnails[page.id].fileName.substring(0, 20) + '...'
+                            : thumbnails[page.id].fileName}
+                        </span>
+                      ) : (
+                        <>버튼 {page.buttons.length} • 터치 영역 {page.touchAreas.length}</>
+                      )}
                     </div>
                     {!validation.isValid && (
                       <div className='mt-0.5 truncate text-xs text-red-600'>
