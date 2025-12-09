@@ -4,6 +4,7 @@ import PageList from '../components/builder/PageList'
 import ProjectSettings from '../components/builder/ProjectSettings'
 import type { Project, Page } from '../types/project'
 import { getAllProjects, saveProject } from '../utils/mediaStorage'
+import { validateAllPages } from '../utils/pageValidation'
 import {
   buildProjectToExecutable,
   buildStandaloneExecutable,
@@ -121,6 +122,23 @@ const BuilderPage: React.FC = () => {
 
   const handleShowBuildOptions = async () => {
     if (!selectedProject) return
+
+    // 페이지가 없는 경우 체크
+    if (selectedProject.pages.length === 0) {
+      alert('❌ 빌드할 수 없습니다.\n\n페이지가 없습니다. 최소 1개 이상의 페이지를 추가해주세요.')
+      return
+    }
+
+    // 페이지 유효성 검사
+    const validation = validateAllPages(selectedProject.pages)
+    if (!validation.isValid) {
+      const errorMessages = validation.invalidPages
+        .map(({ pageIndex, errors }) => `페이지 ${pageIndex + 1}: ${errors.join(', ')}`)
+        .join('\n')
+
+      alert(`❌ 빌드할 수 없습니다.\n\n다음 페이지에 문제가 있습니다:\n${errorMessages}`)
+      return
+    }
 
     // 프로젝트 저장 먼저 수행
     await saveProject(selectedProject)
