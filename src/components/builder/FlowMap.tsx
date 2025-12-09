@@ -203,9 +203,11 @@ const FlowMap: React.FC<FlowMapProps> = ({ pages, onSelectPage, loopAtEnd }) => 
   ): { path: string; color: string; label: string; strokeWidth: number; dashArray?: string } => {
     const cardWidth = 160
     const cardHeight = 90
-    const gap = 40
-    const rowHeight = cardHeight + 90 // 카드 높이 + 아래 텍스트 + 여백
-    const offsetX = 80 // 왼쪽 패딩 오프셋
+    const gap = 40 // gap-x-10 = 40px
+    const gapY = 80 // gap-y-20 = 80px
+    const textHeight = 20 // 미디어 타입 텍스트 높이
+    const rowHeight = cardHeight + textHeight + gapY // 카드 높이 + 텍스트 + 간격
+    const offsetX = 0 // paddingLeft는 컨테이너에 적용되므로 SVG에서는 0
 
     const fromCol = fromIndex % 4
     const fromRow = Math.floor(fromIndex / 4)
@@ -258,7 +260,7 @@ const FlowMap: React.FC<FlowMapProps> = ({ pages, onSelectPage, loopAtEnd }) => 
       const endY = cardHeight / 2
 
       // 왼쪽 바깥으로 크게 돌아가는 직선 경로 (ㄴ자 형태)
-      const loopOffsetX = 30 // 왼쪽 여백
+      const loopOffsetX = -50 // SVG 왼쪽 바깥으로 (paddingLeft 영역)
       const bottomY = startY + 25 // 시작점 아래로
 
       return {
@@ -337,17 +339,19 @@ const FlowMap: React.FC<FlowMapProps> = ({ pages, onSelectPage, loopAtEnd }) => 
         ref={containerRef}
         className='relative overflow-x-auto pb-4'
         style={{
-          minHeight: Math.ceil(pages.length / 4) * 180 + 40,
-          paddingLeft: 80, // 왼쪽 루프 화살표 공간
+          minHeight: Math.ceil(pages.length / 4) * 190 + 40,
+          paddingLeft: 60, // 왼쪽 루프 화살표 공간
         }}
       >
         {/* SVG for arrows */}
         <svg
-          className='pointer-events-none absolute top-0'
+          className='pointer-events-none absolute'
           style={{
-            left: 0,
-            width: Math.min(pages.length, 4) * 200 + 80,
-            height: Math.ceil(pages.length / 4) * 180 + 40,
+            left: 60, // paddingLeft와 동일
+            top: 0,
+            width: Math.min(pages.length, 4) * 200,
+            height: Math.ceil(pages.length / 4) * 190 + 40,
+            overflow: 'visible', // 루프 화살표가 왼쪽 바깥으로 나갈 수 있도록
           }}
         >
           <defs>
