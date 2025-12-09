@@ -7,7 +7,9 @@
     "dev": "tauri dev",
     "dev:vite": "vite",
     "build": "tsc -b && vite build",
+    "build:product": "cross-env VITE_APP_MODE=product tsc -b && cross-env VITE_APP_MODE=product vite build",
     "tauri:build": "tauri build",
+    "tauri:build:product": "cross-env VITE_APP_MODE=product tauri build",
     "preview": "vite preview",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css}\" \"*.{json,html,md}\" \"src-tauri/**/*.json\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css}\" \"*.{json,html,md}\" \"src-tauri/**/*.json\""
@@ -15,6 +17,7 @@
   "dependencies": {
     "@tauri-apps/api": "^2.0.2",
     "@tauri-apps/plugin-dialog": "^2.4.2",
+    "@tauri-apps/plugin-fs": "^2.4.4",
     "@tauri-apps/plugin-shell": "^2.3.3",
     "jszip": "^3.10.1",
     "react": "^19.1.1",
@@ -29,6 +32,7 @@
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^5.0.4",
     "autoprefixer": "^10.4.20",
+    "cross-env": "^10.1.0",
     "postcss": "^8.4.49",
     "prettier": "^3.7.4",
     "prettier-plugin-tailwindcss": "^0.7.2",

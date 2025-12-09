@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react'
-import type { PageButton, NavigationAction } from '../../types/project'
+import type { PageButton } from '../../types/project'
 import {
   saveButtonImage,
   getButtonImage,
@@ -20,8 +20,6 @@ const ButtonEditor: React.FC<ButtonEditorProps> = ({
   totalPages,
 }) => {
   const [selectedButtonId, setSelectedButtonId] = useState<string | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
-  const [isResizing, setIsResizing] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const [buttonImages, setButtonImages] = useState<Record<string, string>>({})
 
@@ -82,7 +80,6 @@ const ButtonEditor: React.FC<ButtonEditorProps> = ({
     e.stopPropagation()
 
     setSelectedButtonId(buttonId)
-    setIsDragging(true)
 
     const button = buttons.find((b) => b.id === buttonId)
     if (!button) return
@@ -110,7 +107,6 @@ const ButtonEditor: React.FC<ButtonEditorProps> = ({
     }
 
     const handleMouseUp = () => {
-      setIsDragging(false)
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
@@ -121,7 +117,6 @@ const ButtonEditor: React.FC<ButtonEditorProps> = ({
 
   const handleResizeMouseDown = (buttonId: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    setIsResizing(true)
 
     const button = buttons.find((b) => b.id === buttonId)
     if (!button || !containerRef.current) return
@@ -146,7 +141,6 @@ const ButtonEditor: React.FC<ButtonEditorProps> = ({
     }
 
     const handleMouseUp = () => {
-      setIsResizing(false)
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }

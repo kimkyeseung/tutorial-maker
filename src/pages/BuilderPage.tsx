@@ -4,7 +4,10 @@ import PageList from '../components/builder/PageList'
 import ProjectSettings from '../components/builder/ProjectSettings'
 import type { Project, Page } from '../types/project'
 import { getAllProjects, saveProject } from '../utils/mediaStorage'
-import { buildProjectToExecutable } from '../utils/projectBuilder'
+import {
+  buildProjectToExecutable,
+  buildStandaloneExecutable,
+} from '../utils/projectBuilder'
 import { exportProject, importProjectFromZip } from '../utils/projectExporter'
 
 type View = 'list' | 'settings' | 'pages'
@@ -16,6 +19,7 @@ const BuilderPage: React.FC = () => {
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null)
   const [isBuilding, setIsBuilding] = useState(false)
   const [buildProgress, setBuildProgress] = useState<string>('')
+  const [showBuildMethodModal, setShowBuildMethodModal] = useState(false)
 
   useEffect(() => {
     loadProjects()
@@ -115,22 +119,61 @@ const BuilderPage: React.FC = () => {
     }
   }
 
-  const handleBuildProject = async () => {
+  const handleShowBuildOptions = async () => {
     if (!selectedProject) return
 
-    try {
-      // 프로젝트 저장 먼저 수행
-      await saveProject(selectedProject)
+    // 프로젝트 저장 먼저 수행
+    await saveProject(selectedProject)
 
-      const confirmed = confirm(
-        '프로젝트를 실행 파일로 빌드하시겠습니까?\n\n' +
-          '이 작업은 몇 분 정도 걸릴 수 있습니다.'
+    // 빌드 방법 선택 모달 표시
+    setShowBuildMethodModal(true)
+  }
+
+  const handleBuildStandalone = async () => {
+    if (!selectedProject) return
+
+    setShowBuildMethodModal(false)
+
+    try {
+      setIsBuilding(true)
+      setBuildProgress('독립 실행 파일 빌드를 시작합니다...')
+
+      const success = await buildStandaloneExecutable(
+        selectedProject,
+        (message) => {
+          setBuildProgress(message)
+        }
       )
 
-      if (!confirmed) return
+      setIsBuilding(false)
 
+      if (success) {
+        alert(
+          '✅ 독립 실행 파일 빌드가 완료되었습니다!\n\n' +
+            '선택한 위치에 실행 파일과 미디어 파일이 생성되었습니다.'
+        )
+      } else {
+        alert('❌ 프로젝트 빌드에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('Build failed:', error)
+      setIsBuilding(false)
+      alert(
+        '❌ 프로젝트 빌드에 실패했습니다.\n\n오류: ' + (error as Error).message
+      )
+    } finally {
+      setBuildProgress('')
+    }
+  }
+
+  const handleBuildViewer = async () => {
+    if (!selectedProject) return
+
+    setShowBuildMethodModal(false)
+
+    try {
       setIsBuilding(true)
-      setBuildProgress('빌드를 시작합니다...')
+      setBuildProgress('뷰어 앱 방식 빌드를 시작합니다...')
 
       const success = await buildProjectToExecutable(
         selectedProject,
@@ -143,7 +186,8 @@ const BuilderPage: React.FC = () => {
 
       if (success) {
         alert(
-          '✅ 프로젝트 빌드가 완료되었습니다!\n\n선택한 폴더에 실행 파일이 생성되었습니다.'
+          '✅ 프로젝트 빌드가 완료되었습니다!\n\n' +
+            '선택한 폴더에 실행 파일과 프로젝트 데이터가 생성되었습니다.'
         )
       } else {
         alert('❌ 프로젝트 빌드에 실패했습니다.')
@@ -301,6 +345,64 @@ const BuilderPage: React.FC = () => {
         </div>
       </header>
 
+      {/* 빌드 방법 선택 모달 */}
+      {showBuildMethodModal && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50'>
+          <div className='mx-4 w-full max-w-2xl rounded-lg bg-white p-8'>
+            <h3 className='mb-6 text-2xl font-bold'>빌드 방법 선택</h3>
+            <div className='mb-6 grid grid-cols-1 gap-4 md:grid-cols-2'>
+              {/* 방법 1: 독립 실행 파일 */}
+              <button
+                onClick={handleBuildStandalone}
+                className='rounded-lg border-2 border-purple-600 bg-purple-50 p-6 text-left transition-all hover:bg-purple-100 hover:shadow-lg'
+              >
+                <div className='mb-2 text-3xl'>🏗️</div>
+                <h4 className='mb-2 text-lg font-bold text-purple-900'>
+                  방법 1: 독립 실행 파일
+                </h4>
+                <p className='mb-3 text-sm text-gray-700'>
+                  프로젝트마다 별도의 실행 파일을 빌드합니다.
+                </p>
+                <ul className='space-y-1 text-xs text-gray-600'>
+                  <li>✅ 완전히 독립적인 실행 파일</li>
+                  <li>✅ 다른 프로젝트에 영향 없음</li>
+                  <li>⚠️ 빌드 시간이 오래 걸림 (5-10분)</li>
+                  <li>⚠️ 파일 크기가 큼 (50-100MB)</li>
+                </ul>
+              </button>
+
+              {/* 방법 2: 뷰어 앱 방식 */}
+              <button
+                onClick={handleBuildViewer}
+                className='rounded-lg border-2 border-blue-600 bg-blue-50 p-6 text-left transition-all hover:bg-blue-100 hover:shadow-lg'
+              >
+                <div className='mb-2 text-3xl'>⚡</div>
+                <h4 className='mb-2 text-lg font-bold text-blue-900'>
+                  방법 2: 뷰어 앱 방식
+                </h4>
+                <p className='mb-3 text-sm text-gray-700'>
+                  현재 앱을 복사하고 프로젝트 데이터를 함께 패키징합니다.
+                </p>
+                <ul className='space-y-1 text-xs text-gray-600'>
+                  <li>✅ 빠른 빌드 (10-30초)</li>
+                  <li>✅ 즉시 배포 가능</li>
+                  <li>⚠️ 현재 앱 버전에 종속적</li>
+                  <li>⚠️ 여러 프로젝트 동시 관리 시 유용</li>
+                </ul>
+              </button>
+            </div>
+            <div className='text-center'>
+              <button
+                onClick={() => setShowBuildMethodModal(false)}
+                className='rounded-lg bg-gray-300 px-6 py-2 text-gray-700 transition-colors hover:bg-gray-400'
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 빌드 진행 상황 모달 */}
       {isBuilding && (
         <div className='fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50'>
@@ -378,7 +480,7 @@ const BuilderPage: React.FC = () => {
                   📦 ZIP으로 내보내기
                 </button>
                 <button
-                  onClick={handleBuildProject}
+                  onClick={handleShowBuildOptions}
                   disabled={isBuilding}
                   className='flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50'
                 >
@@ -418,7 +520,7 @@ const BuilderPage: React.FC = () => {
                   📦 ZIP으로 내보내기
                 </button>
                 <button
-                  onClick={handleBuildProject}
+                  onClick={handleShowBuildOptions}
                   disabled={isBuilding}
                   className='flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50'
                 >

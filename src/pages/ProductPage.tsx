@@ -19,15 +19,21 @@ const ProductPage: React.FC = () => {
 
   const loadProjectData = async () => {
     try {
-      // 개발 모드: IndexedDB에서 첫 번째 프로젝트 로드
       const isProductMode = import.meta.env.VITE_APP_MODE === 'product'
 
       let projectData: Project
 
       if (isProductMode) {
-        // 프로덕트 모드: /project.json에서 로드
-        const response = await fetch('/project.json')
-        projectData = await response.json()
+        // 프로덕트 모드: Rust 백엔드에서 실행 파일과 같은 디렉토리의 project.json 로드
+        try {
+          const { invoke } = await import('@tauri-apps/api/core')
+          const projectJson = await invoke<string>('read_project_file')
+          projectData = JSON.parse(projectJson)
+        } catch (e) {
+          console.error('Failed to load project.json:', e)
+          setIsLoading(false)
+          return
+        }
       } else {
         // 개발 모드: IndexedDB에서 로드
         const projects = await getAllProjects()
@@ -45,9 +51,26 @@ const ProductPage: React.FC = () => {
       const urls: Record<string, string> = {}
       for (const page of projectData.pages) {
         if (page.mediaId) {
-          const media = await getMediaFile(page.mediaId)
-          if (media) {
-            urls[page.mediaId] = createBlobURL(media.blob)
+          if (isProductMode) {
+            // 프로덕트 모드: Rust 백엔드에서 직접 미디어 파일 읽기
+            try {
+              const { invoke } = await import('@tauri-apps/api/core')
+              const mediaData = await invoke<number[]>('read_media_file', {
+                mediaId: page.mediaId,
+              })
+              // 바이너리 데이터를 Blob으로 변환
+              const uint8Array = new Uint8Array(mediaData)
+              const blob = new Blob([uint8Array])
+              urls[page.mediaId] = URL.createObjectURL(blob)
+            } catch (e) {
+              console.error('Failed to load media:', page.mediaId, e)
+            }
+          } else {
+            // 개발 모드: IndexedDB에서 로드
+            const media = await getMediaFile(page.mediaId)
+            if (media) {
+              urls[page.mediaId] = createBlobURL(media.blob)
+            }
           }
         }
       }

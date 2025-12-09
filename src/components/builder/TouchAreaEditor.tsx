@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react'
-import type { TouchArea, NavigationAction } from '../../types/project'
+import type { TouchArea } from '../../types/project'
 
 type TouchAreaEditorProps = {
   touchAreas: TouchArea[]
@@ -15,8 +15,6 @@ const TouchAreaEditor: React.FC<TouchAreaEditorProps> = ({
   totalPages,
 }) => {
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
-  const [isResizing, setIsResizing] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
   const handleAddTouchArea = () => {
@@ -50,7 +48,6 @@ const TouchAreaEditor: React.FC<TouchAreaEditorProps> = ({
     e.stopPropagation()
 
     setSelectedAreaId(areaId)
-    setIsDragging(true)
 
     const area = touchAreas.find((a) => a.id === areaId)
     if (!area) return
@@ -75,7 +72,6 @@ const TouchAreaEditor: React.FC<TouchAreaEditorProps> = ({
     }
 
     const handleMouseUp = () => {
-      setIsDragging(false)
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
@@ -86,7 +82,6 @@ const TouchAreaEditor: React.FC<TouchAreaEditorProps> = ({
 
   const handleResizeMouseDown = (areaId: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    setIsResizing(true)
 
     const area = touchAreas.find((a) => a.id === areaId)
     if (!area || !containerRef.current) return
@@ -111,7 +106,6 @@ const TouchAreaEditor: React.FC<TouchAreaEditorProps> = ({
     }
 
     const handleMouseUp = () => {
-      setIsResizing(false)
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }

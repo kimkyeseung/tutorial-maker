@@ -45,8 +45,8 @@ export interface TouchArea {
   position: { x: number; y: number } // 퍼센트 (0-100)
   size: { width: number; height: number } // 퍼센트 (0-100)
   action: NavigationAction
-  activeTiming: 'immediate' | 'after-video'
-  debugVisible: boolean // 디버그 모드에서 테두리 표시
+  showTiming: 'immediate' | 'after-video'
+  debugVisible?: boolean // 디버그 모드에서 테두리 표시
 }
 
 export interface NavigationAction {

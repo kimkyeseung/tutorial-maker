@@ -58,3 +58,4 @@ coverage/
 
 # Claude
 .claude/
+.claude/*
