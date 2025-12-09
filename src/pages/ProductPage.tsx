@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import VideoPlayer from '../components/product/VideoPlayer'
+import ConfirmDialog from '../components/common/ConfirmDialog'
 import type { Project } from '../types/project'
 import {
   getAllProjects,
@@ -13,6 +14,7 @@ const ProductPage: React.FC = () => {
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [mountedPages, setMountedPages] = useState<Set<number>>(new Set([0]))
+  const [exitConfirm, setExitConfirm] = useState(false)
 
   useEffect(() => {
     loadProjectData()
@@ -163,9 +165,7 @@ const ProductPage: React.FC = () => {
 
       // 종료 키 확인
       if (project.settings.exitKey && e.key === project.settings.exitKey) {
-        if (confirm('앱을 종료하시겠습니까?')) {
-          window.close()
-        }
+        setExitConfirm(true)
         return
       }
 
@@ -273,6 +273,18 @@ const ProductPage: React.FC = () => {
 
   return (
     <div className='relative h-screen w-screen overflow-hidden bg-black'>
+      {/* 종료 확인 다이얼로그 */}
+      <ConfirmDialog
+        isOpen={exitConfirm}
+        title='앱 종료'
+        message='앱을 종료하시겠습니까?'
+        confirmText='종료'
+        cancelText='취소'
+        onConfirm={() => window.close()}
+        onCancel={() => setExitConfirm(false)}
+        variant='warning'
+      />
+
       {/* 마운트된 모든 페이지 렌더링 (프리로딩) */}
       {Array.from(mountedPages).map((pageIndex) => {
         const page = project.pages[pageIndex]

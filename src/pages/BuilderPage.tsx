@@ -3,8 +3,9 @@ import PageEditor from '../components/builder/PageEditor'
 import PageList from '../components/builder/PageList'
 import FlowMap from '../components/builder/FlowMap'
 import ProjectSettings from '../components/builder/ProjectSettings'
+import ConfirmDialog from '../components/common/ConfirmDialog'
 import type { Project, Page } from '../types/project'
-import { getAllProjects, saveProject, getAppIcon, createBlobURL } from '../utils/mediaStorage'
+import { getAllProjects, saveProject, deleteProject, getAppIcon, createBlobURL } from '../utils/mediaStorage'
 import { validateAllPages } from '../utils/pageValidation'
 import {
   buildStandaloneExecutable,
@@ -25,6 +26,13 @@ const BuilderPage: React.FC = () => {
   const [pagesViewMode, setPagesViewMode] = useState<PagesViewMode>('list')
   const [projectIcons, setProjectIcons] = useState<Record<string, string>>({})
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean
+    projectId: string
+    projectName: string
+  }>({ isOpen: false, projectId: '', projectName: '' })
+  const [exportConfirm, setExportConfirm] = useState(false)
+  const [unsavedChangesConfirm, setUnsavedChangesConfirm] = useState(false)
 
   useEffect(() => {
     loadProjects()
@@ -112,20 +120,42 @@ const BuilderPage: React.FC = () => {
     setCurrentView('list')
   }
 
-  const handleExportProject = async () => {
+  const handleDeleteProject = (projectId: string, projectName: string) => {
+    setDeleteConfirm({
+      isOpen: true,
+      projectId,
+      projectName,
+    })
+  }
+
+  const confirmDeleteProject = async () => {
+    try {
+      await deleteProject(deleteConfirm.projectId)
+      await loadProjects()
+      setDeleteConfirm({ isOpen: false, projectId: '', projectName: '' })
+      alert('프로젝트가 삭제되었습니다.')
+    } catch (error) {
+      console.error('Delete failed:', error)
+      alert('프로젝트 삭제에 실패했습니다.')
+    }
+  }
+
+  const cancelDeleteProject = () => {
+    setDeleteConfirm({ isOpen: false, projectId: '', projectName: '' })
+  }
+
+  const handleExportProject = () => {
     if (!selectedProject) return
+    setExportConfirm(true)
+  }
+
+  const confirmExportProject = async () => {
+    if (!selectedProject) return
+    setExportConfirm(false)
 
     try {
       // 프로젝트 저장 먼저 수행
       await saveProject(selectedProject)
-
-      // 사용자에게 시작 알림
-      const confirmed = confirm(
-        '프로젝트를 ZIP 파일로 내보내시겠습니까?\n\n' +
-          '프로젝트 데이터와 모든 미디어 파일이 포함된 ZIP 파일이 자동으로 다운로드됩니다.'
-      )
-
-      if (!confirmed) return
 
       // ZIP 파일로 내보내기 (자동 다운로드)
       const success = await exportProject(selectedProject)
@@ -144,6 +174,29 @@ const BuilderPage: React.FC = () => {
           (error as Error).message
       )
     }
+  }
+
+  const handleGoToPages = () => {
+    if (hasUnsavedChanges) {
+      setUnsavedChangesConfirm(true)
+    } else {
+      setCurrentView('pages')
+    }
+  }
+
+  const confirmSaveAndGoToPages = async () => {
+    setUnsavedChangesConfirm(false)
+    if (selectedProject) {
+      await saveProject(selectedProject)
+      await loadProjects()
+      setHasUnsavedChanges(false)
+    }
+    setCurrentView('pages')
+  }
+
+  const skipSaveAndGoToPages = () => {
+    setUnsavedChangesConfirm(false)
+    setCurrentView('pages')
   }
 
   const handleBuild = async () => {
@@ -318,6 +371,42 @@ const BuilderPage: React.FC = () => {
 
   return (
     <div className='min-h-screen bg-gray-100'>
+      {/* 삭제 확인 다이얼로그 */}
+      <ConfirmDialog
+        isOpen={deleteConfirm.isOpen}
+        title='프로젝트 삭제'
+        message={`"${deleteConfirm.projectName}" 프로젝트를 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`}
+        confirmText='삭제'
+        cancelText='취소'
+        onConfirm={confirmDeleteProject}
+        onCancel={cancelDeleteProject}
+        variant='danger'
+      />
+
+      {/* 내보내기 확인 다이얼로그 */}
+      <ConfirmDialog
+        isOpen={exportConfirm}
+        title='프로젝트 내보내기'
+        message='프로젝트를 ZIP 파일로 내보내시겠습니까?\n\n프로젝트 데이터와 모든 미디어 파일이 포함된 ZIP 파일이 자동으로 다운로드됩니다.'
+        confirmText='내보내기'
+        cancelText='취소'
+        onConfirm={confirmExportProject}
+        onCancel={() => setExportConfirm(false)}
+        variant='info'
+      />
+
+      {/* 저장되지 않은 변경사항 확인 다이얼로그 */}
+      <ConfirmDialog
+        isOpen={unsavedChangesConfirm}
+        title='저장되지 않은 변경사항'
+        message='저장되지 않은 변경사항이 있습니다.\n저장하시겠습니까?'
+        confirmText='저장'
+        cancelText='저장 안 함'
+        onConfirm={confirmSaveAndGoToPages}
+        onCancel={skipSaveAndGoToPages}
+        variant='warning'
+      />
+
       {/* 헤더 */}
       <header className='bg-white shadow-sm'>
         <div className='mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8'>
@@ -435,6 +524,17 @@ const BuilderPage: React.FC = () => {
                           </span>
                         </div>
                       </div>
+                      {/* 삭제 버튼 */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDeleteProject(project.id, project.name)
+                        }}
+                        className='flex-shrink-0 rounded p-2 text-gray-400 hover:bg-red-200 hover:text-red-600'
+                        title='프로젝트 삭제'
+                      >
+                        삭제
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -474,19 +574,7 @@ const BuilderPage: React.FC = () => {
             />
             <div className='mt-6 text-center'>
               <button
-                onClick={async () => {
-                  if (hasUnsavedChanges) {
-                    const shouldSave = confirm(
-                      '저장되지 않은 변경사항이 있습니다.\n저장하시겠습니까?'
-                    )
-                    if (shouldSave && selectedProject) {
-                      await saveProject(selectedProject)
-                      await loadProjects()
-                      setHasUnsavedChanges(false)
-                    }
-                  }
-                  setCurrentView('pages')
-                }}
+                onClick={handleGoToPages}
                 className='rounded-lg bg-blue-600 px-6 py-3 text-white transition-colors hover:bg-blue-700'
               >
                 페이지 편집하기 →

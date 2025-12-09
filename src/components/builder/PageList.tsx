@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import type { Page } from '../../types/project'
 import { getMediaFile, createBlobURL } from '../../utils/mediaStorage'
 import { validatePage } from '../../utils/pageValidation'
+import ConfirmDialog from '../common/ConfirmDialog'
 
 type PageListProps = {
   pages: Page[]
@@ -29,6 +30,11 @@ const PageList: React.FC<PageListProps> = ({
   const [thumbnails, setThumbnails] = useState<Record<string, ThumbnailData>>(
     {}
   )
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean
+    pageId: string
+    pageIndex: number
+  }>({ isOpen: false, pageId: '', pageIndex: 0 })
 
   const getValidationStatus = (page: Page) => {
     const result = validatePage(page)
@@ -97,6 +103,21 @@ const PageList: React.FC<PageListProps> = ({
 
   return (
     <div className='rounded-lg bg-white p-4 shadow'>
+      {/* 페이지 삭제 확인 다이얼로그 */}
+      <ConfirmDialog
+        isOpen={deleteConfirm.isOpen}
+        title='페이지 삭제'
+        message={`페이지 ${deleteConfirm.pageIndex + 1}을(를) 삭제하시겠습니까?`}
+        confirmText='삭제'
+        cancelText='취소'
+        onConfirm={() => {
+          onDeletePage(deleteConfirm.pageId)
+          setDeleteConfirm({ isOpen: false, pageId: '', pageIndex: 0 })
+        }}
+        onCancel={() => setDeleteConfirm({ isOpen: false, pageId: '', pageIndex: 0 })}
+        variant='danger'
+      />
+
       <div className='mb-4 flex items-center justify-between'>
         <h3 className='text-lg font-semibold'>페이지 목록</h3>
         <button
@@ -204,9 +225,7 @@ const PageList: React.FC<PageListProps> = ({
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
-                      if (confirm('이 페이지를 삭제하시겠습니까?')) {
-                        onDeletePage(page.id)
-                      }
+                      setDeleteConfirm({ isOpen: true, pageId: page.id, pageIndex: index })
                     }}
                     className='flex-shrink-0 rounded px-2 py-1 text-sm text-red-600 hover:bg-red-50'
                   >
