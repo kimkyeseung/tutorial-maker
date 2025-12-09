@@ -26,6 +26,7 @@ const BuilderPage: React.FC = () => {
   const [showBuildMethodModal, setShowBuildMethodModal] = useState(false)
   const [pagesViewMode, setPagesViewMode] = useState<PagesViewMode>('list')
   const [projectIcons, setProjectIcons] = useState<Record<string, string>>({})
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
   useEffect(() => {
     loadProjects()
@@ -90,6 +91,7 @@ const BuilderPage: React.FC = () => {
       updatedAt: Date.now(),
     }
     setSelectedProject(updatedProject)
+    setHasUnsavedChanges(true)
   }
 
   const handleSaveProject = async () => {
@@ -97,12 +99,14 @@ const BuilderPage: React.FC = () => {
 
     await saveProject(selectedProject)
     await loadProjects()
+    setHasUnsavedChanges(false)
     alert('프로젝트가 저장되었습니다!')
   }
 
   const handleSelectProject = (project: Project) => {
     setSelectedProject(project)
     setCurrentView('settings')
+    setHasUnsavedChanges(false)
   }
 
   const handleBackToList = () => {
@@ -578,7 +582,19 @@ const BuilderPage: React.FC = () => {
             />
             <div className='mt-6 text-center'>
               <button
-                onClick={() => setCurrentView('pages')}
+                onClick={async () => {
+                  if (hasUnsavedChanges) {
+                    const shouldSave = confirm(
+                      '저장되지 않은 변경사항이 있습니다.\n저장하시겠습니까?'
+                    )
+                    if (shouldSave && selectedProject) {
+                      await saveProject(selectedProject)
+                      await loadProjects()
+                      setHasUnsavedChanges(false)
+                    }
+                  }
+                  setCurrentView('pages')
+                }}
                 className='rounded-lg bg-blue-600 px-6 py-3 text-white transition-colors hover:bg-blue-700'
               >
                 페이지 편집하기 →
