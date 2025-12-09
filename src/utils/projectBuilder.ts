@@ -1,4 +1,4 @@
-import { open, save } from '@tauri-apps/plugin-dialog'
+import { save } from '@tauri-apps/plugin-dialog'
 import { mkdir, writeFile, BaseDirectory } from '@tauri-apps/plugin-fs'
 import type { Project } from '../types/project'
 import { getAppIcon, getButtonImage, getMediaFile } from '../utils/mediaStorage'
@@ -9,8 +9,6 @@ export interface BuildProgress {
   step?: number
   totalSteps?: number
 }
-
-export type BuildMethod = 'standalone' | 'viewer'
 
 // Tauri API를 동적으로 가져오는 헬퍼 함수
 async function getTauriCore() {
@@ -189,71 +187,3 @@ export async function buildStandaloneExecutable(
   }
 }
 
-// 방법 2: 뷰어 앱 방식 (현재 실행 파일 + 프로젝트 데이터)
-export async function buildProjectToExecutable(
-  project: Project,
-  onProgress?: (progress: BuildProgress) => void
-): Promise<boolean> {
-  try {
-    // 출력 디렉토리 선택
-    const outputDir = await open({
-      directory: true,
-      multiple: false,
-      title: '빌드 결과를 저장할 폴더를 선택하세요',
-    })
-
-    if (!outputDir) {
-      return false
-    }
-
-    // Tauri API 동적 로드
-    const { invoke } = await getTauriCore()
-    const { listen } = await getTauriEvent()
-
-    // 진행 상황 리스너 등록 (Rust에서 오는 이벤트)
-    const unlisten = await listen<string>('build-progress', (event) => {
-      if (onProgress) {
-        onProgress({
-          message: event.payload,
-          percent: 30 + Math.min(70, 70),
-        })
-      }
-    })
-
-    try {
-      if (onProgress) {
-        onProgress({ message: '미디어 파일 준비 시작...', percent: 0 })
-      }
-
-      // 미디어 파일 수집 및 저장
-      const { mediaPaths } = await collectAndSaveMedia(project, onProgress)
-
-      if (onProgress) {
-        onProgress({ message: '빌드 시작 중...', percent: 30 })
-      }
-
-      // 프로젝트 데이터를 JSON으로 변환
-      const projectJson = JSON.stringify(project, null, 2)
-
-      // Rust 백엔드 호출 (방법 2)
-      const result = await invoke<string>('build_project', {
-        projectJson,
-        outputDir,
-        mediaPaths,
-      })
-
-      if (onProgress) {
-        onProgress({ message: '빌드 완료!', percent: 100 })
-      }
-
-      console.log('빌드 완료:', result)
-      return true
-    } finally {
-      // 리스너 해제
-      unlisten()
-    }
-  } catch (error) {
-    console.error('빌드 실패:', error)
-    throw error
-  }
-}
