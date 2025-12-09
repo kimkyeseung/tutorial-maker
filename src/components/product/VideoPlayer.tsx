@@ -9,6 +9,7 @@ type VideoPlayerProps = {
   onVideoEnd: () => void
   onButtonClick: (buttonId: string) => void
   onTouchAreaClick: (touchAreaId: string) => void
+  isActive?: boolean
 }
 
 const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -17,21 +18,33 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onVideoEnd,
   onButtonClick,
   onTouchAreaClick,
+  isActive = true,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
   const [hasEnded, setHasEnded] = useState(false)
 
+  // 활성 상태가 되면 비디오 재생, 비활성화되면 일시정지
   useEffect(() => {
-    setHasEnded(false)
+    if (page.mediaType === 'video' && videoRef.current) {
+      if (isActive) {
+        setHasEnded(false)
+        videoRef.current.currentTime = 0
+        videoRef.current.play().catch((err) => {
+          console.error('Failed to play video:', err)
+        })
+      } else {
+        videoRef.current.pause()
+      }
+    }
+  }, [isActive, page.mediaType])
 
+  // 미디어 URL 변경 시 로드
+  useEffect(() => {
     if (page.mediaType === 'video' && videoRef.current) {
       videoRef.current.load()
-      videoRef.current.play().catch((err) => {
-        console.error('Failed to play video:', err)
-      })
     }
-  }, [page.id, mediaUrl])
+  }, [mediaUrl, page.mediaType])
 
   const handleVideoEnded = () => {
     setHasEnded(true)

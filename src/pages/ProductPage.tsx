@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import VideoPlayer from '../components/product/VideoPlayer'
 import type { Project } from '../types/project'
 import {
@@ -12,6 +12,7 @@ const ProductPage: React.FC = () => {
   const [currentPageIndex, setCurrentPageIndex] = useState(0)
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({})
   const [isLoading, setIsLoading] = useState(true)
+  const [mountedPages, setMountedPages] = useState<Set<number>>(new Set([0]))
 
   useEffect(() => {
     loadProjectData()
@@ -182,6 +183,55 @@ const ProductPage: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyPress)
   }, [project, currentPageIndex])
 
+  // 현재 페이지에서 연결된 페이지들 계산 (프리로딩 대상)
+  const connectedPages = useMemo(() => {
+    if (!project) return new Set<number>()
+
+    const connected = new Set<number>([currentPageIndex])
+    const currentPage = project.pages[currentPageIndex]
+
+    if (!currentPage) return connected
+
+    // 다음 페이지 (버튼/터치에서 'next' 액션이 있거나, single 재생 타입일 때)
+    const nextIndex = currentPageIndex + 1
+    if (nextIndex < project.pages.length) {
+      connected.add(nextIndex)
+    } else if (project.settings.loopAtEnd) {
+      connected.add(0) // 마지막에서 처음으로
+    }
+
+    // 버튼에서 goto로 연결된 페이지들
+    currentPage.buttons.forEach((button) => {
+      if (button.action.type === 'goto' && button.action.targetPageId !== undefined) {
+        const targetIndex = parseInt(button.action.targetPageId)
+        if (targetIndex >= 0 && targetIndex < project.pages.length) {
+          connected.add(targetIndex)
+        }
+      }
+    })
+
+    // 터치 영역에서 goto로 연결된 페이지들
+    currentPage.touchAreas.forEach((touchArea) => {
+      if (touchArea.action.type === 'goto' && touchArea.action.targetPageId !== undefined) {
+        const targetIndex = parseInt(touchArea.action.targetPageId)
+        if (targetIndex >= 0 && targetIndex < project.pages.length) {
+          connected.add(targetIndex)
+        }
+      }
+    })
+
+    return connected
+  }, [project, currentPageIndex])
+
+  // 연결된 페이지들을 마운트된 페이지 목록에 추가
+  useEffect(() => {
+    setMountedPages((prev) => {
+      const newSet = new Set(prev)
+      connectedPages.forEach((pageIndex) => newSet.add(pageIndex))
+      return newSet
+    })
+  }, [connectedPages])
+
   if (isLoading) {
     return (
       <div className='flex min-h-screen items-center justify-center bg-gray-900 text-white'>
@@ -220,28 +270,49 @@ const ProductPage: React.FC = () => {
   }
 
   const currentPage = project.pages[currentPageIndex]
-  const mediaUrl = currentPage?.mediaId ? mediaUrls[currentPage.mediaId] : null
 
   return (
     <div className='relative h-screen w-screen overflow-hidden bg-black'>
-      {/* 메인 콘텐츠 영역 */}
-      {currentPage && mediaUrl ? (
-        <VideoPlayer
-          page={currentPage}
-          mediaUrl={mediaUrl}
-          onVideoEnd={handleVideoEnd}
-          onButtonClick={handleButtonClick}
-          onTouchAreaClick={handleTouchAreaClick}
-        />
-      ) : (
-        <div className='flex h-full w-full items-center justify-center text-white'>
+      {/* 마운트된 모든 페이지 렌더링 (프리로딩) */}
+      {Array.from(mountedPages).map((pageIndex) => {
+        const page = project.pages[pageIndex]
+        const mediaUrl = page?.mediaId ? mediaUrls[page.mediaId] : null
+        const isCurrentPage = pageIndex === currentPageIndex
+
+        if (!page || !mediaUrl) return null
+
+        return (
+          <div
+            key={page.id}
+            className='absolute inset-0'
+            style={{
+              zIndex: isCurrentPage ? 10 : 1,
+              opacity: isCurrentPage ? 1 : 0,
+              pointerEvents: isCurrentPage ? 'auto' : 'none',
+            }}
+          >
+            <VideoPlayer
+              page={page}
+              mediaUrl={mediaUrl}
+              onVideoEnd={isCurrentPage ? handleVideoEnd : () => {}}
+              onButtonClick={isCurrentPage ? handleButtonClick : () => {}}
+              onTouchAreaClick={isCurrentPage ? handleTouchAreaClick : () => {}}
+              isActive={isCurrentPage}
+            />
+          </div>
+        )
+      })}
+
+      {/* 미디어 로드 실패 시 */}
+      {!currentPage || !mediaUrls[currentPage?.mediaId || ''] ? (
+        <div className='absolute inset-0 z-20 flex h-full w-full items-center justify-center text-white'>
           <p>미디어를 로드할 수 없습니다</p>
         </div>
-      )}
+      ) : null}
 
       {/* 컨트롤 오버레이 */}
       {(project.settings.showBackButton || project.settings.showHomeButton) && (
-        <div className='absolute bottom-8 left-1/2 z-10 flex -translate-x-1/2 transform gap-4'>
+        <div className='absolute bottom-8 left-1/2 z-30 flex -translate-x-1/2 transform gap-4'>
           {project.settings.showBackButton && currentPageIndex > 0 && (
             <button
               onClick={goToPreviousPage}
@@ -264,14 +335,14 @@ const ProductPage: React.FC = () => {
 
       {/* 진행 상황 표시 */}
       {project.settings.showProgress && (
-        <div className='absolute right-4 top-4 z-10 rounded-lg bg-gray-800 bg-opacity-80 px-4 py-2 text-white shadow-lg'>
+        <div className='absolute right-4 top-4 z-30 rounded-lg bg-gray-800 bg-opacity-80 px-4 py-2 text-white shadow-lg'>
           {currentPageIndex + 1} / {project.pages.length}
         </div>
       )}
 
       {/* 종료 키 안내 */}
       {project.settings.exitKey && (
-        <div className='absolute left-4 top-4 z-10 rounded bg-gray-800 bg-opacity-80 px-3 py-1 text-xs text-white'>
+        <div className='absolute left-4 top-4 z-30 rounded bg-gray-800 bg-opacity-80 px-3 py-1 text-xs text-white'>
           {project.settings.exitKey} 키로 종료
         </div>
       )}
