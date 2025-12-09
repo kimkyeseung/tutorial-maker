@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import PageEditor from '../components/builder/PageEditor'
 import PageList from '../components/builder/PageList'
+import FlowMap from '../components/builder/FlowMap'
 import ProjectSettings from '../components/builder/ProjectSettings'
 import type { Project, Page } from '../types/project'
 import { getAllProjects, saveProject } from '../utils/mediaStorage'
@@ -12,6 +13,7 @@ import {
 import { exportProject, importProjectFromZip } from '../utils/projectExporter'
 
 type View = 'list' | 'settings' | 'pages'
+type PagesViewMode = 'list' | 'flowmap'
 
 const BuilderPage: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([])
@@ -21,6 +23,7 @@ const BuilderPage: React.FC = () => {
   const [isBuilding, setIsBuilding] = useState(false)
   const [buildProgress, setBuildProgress] = useState<string>('')
   const [showBuildMethodModal, setShowBuildMethodModal] = useState(false)
+  const [pagesViewMode, setPagesViewMode] = useState<PagesViewMode>('list')
 
   useEffect(() => {
     loadProjects()
@@ -530,6 +533,29 @@ const BuilderPage: React.FC = () => {
                 ← 프로젝트 설정으로
               </button>
               <div className='flex gap-2'>
+                {/* 뷰 모드 토글 */}
+                <div className='flex rounded-lg border border-gray-300 bg-white'>
+                  <button
+                    onClick={() => setPagesViewMode('list')}
+                    className={`flex items-center gap-1 px-3 py-2 text-sm transition-colors ${
+                      pagesViewMode === 'list'
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-600 hover:bg-gray-100'
+                    } rounded-l-lg`}
+                  >
+                    📋 목록
+                  </button>
+                  <button
+                    onClick={() => setPagesViewMode('flowmap')}
+                    className={`flex items-center gap-1 px-3 py-2 text-sm transition-colors ${
+                      pagesViewMode === 'flowmap'
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-600 hover:bg-gray-100'
+                    } rounded-r-lg`}
+                  >
+                    🗺️ 흐름도
+                  </button>
+                </div>
                 <button
                   onClick={handleExportProject}
                   disabled={isBuilding}
@@ -554,28 +580,45 @@ const BuilderPage: React.FC = () => {
               </div>
             </div>
 
-            <div className='grid grid-cols-1 gap-6 lg:grid-cols-3'>
-              {/* 왼쪽: 페이지 목록 */}
-              <div className='lg:col-span-1'>
-                <PageList
+            {/* 흐름도 뷰 */}
+            {pagesViewMode === 'flowmap' && (
+              <div className='mb-6'>
+                <FlowMap
                   pages={selectedProject.pages}
-                  selectedPageId={selectedPageId}
-                  onSelectPage={handleSelectPage}
-                  onAddPage={handleAddPage}
-                  onDeletePage={handleDeletePage}
-                  onReorderPages={handleReorderPages}
+                  onSelectPage={(pageId) => {
+                    handleSelectPage(pageId)
+                    setPagesViewMode('list') // 클릭 시 목록 뷰로 전환하여 편집
+                  }}
+                  loopAtEnd={selectedProject.settings.loopAtEnd}
                 />
               </div>
+            )}
 
-              {/* 오른쪽: 페이지 편집기 */}
-              <div className='lg:col-span-2'>
-                <PageEditor
-                  page={selectedPage}
-                  onUpdate={handlePageUpdate}
-                  totalPages={selectedProject.pages.length}
-                />
+            {/* 목록 뷰 */}
+            {pagesViewMode === 'list' && (
+              <div className='grid grid-cols-1 gap-6 lg:grid-cols-3'>
+                {/* 왼쪽: 페이지 목록 */}
+                <div className='lg:col-span-1'>
+                  <PageList
+                    pages={selectedProject.pages}
+                    selectedPageId={selectedPageId}
+                    onSelectPage={handleSelectPage}
+                    onAddPage={handleAddPage}
+                    onDeletePage={handleDeletePage}
+                    onReorderPages={handleReorderPages}
+                  />
+                </div>
+
+                {/* 오른쪽: 페이지 편집기 */}
+                <div className='lg:col-span-2'>
+                  <PageEditor
+                    page={selectedPage}
+                    onUpdate={handlePageUpdate}
+                    totalPages={selectedProject.pages.length}
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </div>
         ) : null}
       </main>
