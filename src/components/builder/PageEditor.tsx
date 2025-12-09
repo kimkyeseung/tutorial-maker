@@ -21,11 +21,14 @@ const PageEditor: React.FC<PageEditorProps> = ({
   totalPages,
 }) => {
   const [mediaPreview, setMediaPreview] = useState<string | null>(null)
+  const [mediaFileName, setMediaFileName] = useState<string | null>(null)
   const [showMediaUploader, setShowMediaUploader] = useState(false)
 
   useEffect(() => {
     if (page?.mediaId) {
       loadMediaPreview(page.mediaId)
+    } else {
+      setMediaFileName(null)
     }
 
     return () => {
@@ -40,6 +43,7 @@ const PageEditor: React.FC<PageEditorProps> = ({
     if (media) {
       const url = createBlobURL(media.blob)
       setMediaPreview(url)
+      setMediaFileName(media.name)
     }
   }
 
@@ -123,12 +127,19 @@ const PageEditor: React.FC<PageEditorProps> = ({
                   </div>
                 )}
               </div>
-              <button
-                onClick={() => setShowMediaUploader(true)}
-                className='mt-2 rounded bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200'
-              >
-                미디어 변경
-              </button>
+              <div className='mt-2 flex items-center justify-between'>
+                {mediaFileName && (
+                  <span className='truncate text-sm text-gray-600' title={mediaFileName}>
+                    {page.mediaType === 'video' ? '🎥' : '🖼️'} {mediaFileName}
+                  </span>
+                )}
+                <button
+                  onClick={() => setShowMediaUploader(true)}
+                  className='rounded bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200'
+                >
+                  미디어 변경
+                </button>
+              </div>
             </div>
           ) : (
             <div>
@@ -152,6 +163,7 @@ const PageEditor: React.FC<PageEditorProps> = ({
           buttons={page.buttons}
           onUpdate={(buttons: PageButton[]) => onUpdate({ buttons })}
           mediaUrl={mediaPreview}
+          mediaType={page.mediaType}
           totalPages={totalPages}
         />
       )}
@@ -162,6 +174,7 @@ const PageEditor: React.FC<PageEditorProps> = ({
           touchAreas={page.touchAreas}
           onUpdate={(touchAreas: TouchArea[]) => onUpdate({ touchAreas })}
           mediaUrl={mediaPreview}
+          mediaType={page.mediaType}
           totalPages={totalPages}
         />
       )}

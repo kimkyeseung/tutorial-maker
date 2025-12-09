@@ -10,6 +10,7 @@ type ButtonEditorProps = {
   buttons: PageButton[]
   onUpdate: (buttons: PageButton[]) => void
   mediaUrl: string | null
+  mediaType: 'video' | 'image'
   totalPages: number
 }
 
@@ -17,6 +18,7 @@ const ButtonEditor: React.FC<ButtonEditorProps> = ({
   buttons,
   onUpdate,
   mediaUrl,
+  mediaType,
   totalPages,
 }) => {
   const [selectedButtonId, setSelectedButtonId] = useState<string | null>(null)
@@ -176,14 +178,21 @@ const ButtonEditor: React.FC<ButtonEditorProps> = ({
       <div
         ref={containerRef}
         className='relative mb-4 aspect-video w-full overflow-hidden rounded-lg bg-gray-900'
-        style={{
-          backgroundImage: mediaUrl ? `url(${mediaUrl})` : undefined,
-          backgroundSize: 'contain',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-        }}
       >
-        {!mediaUrl && (
+        {/* 배경 미디어 */}
+        {mediaUrl && mediaType === 'video' ? (
+          <video
+            src={mediaUrl}
+            className='pointer-events-none absolute inset-0 h-full w-full object-contain'
+            muted
+          />
+        ) : mediaUrl && mediaType === 'image' ? (
+          <img
+            src={mediaUrl}
+            alt='Background'
+            className='pointer-events-none absolute inset-0 h-full w-full object-contain'
+          />
+        ) : (
           <div className='absolute inset-0 flex items-center justify-center text-gray-500'>
             미디어를 먼저 추가하세요
           </div>
