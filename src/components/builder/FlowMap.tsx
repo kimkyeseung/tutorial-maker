@@ -479,12 +479,16 @@ const FlowMap: React.FC<FlowMapProps> = ({ pages, onSelectPage, loopAtEnd }) => 
                     {index + 1}
                   </div>
 
-                  {/* 재생 타입 아이콘 */}
+                  {/* 재생 타입 뱃지 */}
                   <div
-                    className='absolute bottom-1 right-1 rounded bg-black bg-opacity-70 px-1.5 py-0.5 text-xs'
+                    className={`absolute bottom-1 right-1 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                      page.playType === 'loop'
+                        ? 'bg-orange-500 text-white'
+                        : 'bg-blue-500 text-white'
+                    }`}
                     title={page.playType === 'loop' ? '반복 재생' : '1회 재생'}
                   >
-                    {page.playType === 'loop' ? '🔁' : '1️⃣'}
+                    {page.playType === 'loop' ? '반복' : '1회'}
                   </div>
 
                   {/* 인터랙션 아이콘들 */}
