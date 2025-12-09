@@ -240,32 +240,27 @@ const ProductPage: React.FC = () => {
       )}
 
       {/* 컨트롤 오버레이 */}
-      <div className='absolute bottom-8 left-1/2 z-10 flex -translate-x-1/2 transform gap-4'>
-        {project.settings.showBackButton && currentPageIndex > 0 && (
-          <button
-            onClick={goToPreviousPage}
-            className='rounded-lg bg-gray-800 bg-opacity-80 px-6 py-3 text-white shadow-lg transition-all hover:bg-opacity-100'
-          >
-            ← 이전
-          </button>
-        )}
+      {(project.settings.showBackButton || project.settings.showHomeButton) && (
+        <div className='absolute bottom-8 left-1/2 z-10 flex -translate-x-1/2 transform gap-4'>
+          {project.settings.showBackButton && currentPageIndex > 0 && (
+            <button
+              onClick={goToPreviousPage}
+              className='rounded-lg bg-gray-800 bg-opacity-80 px-6 py-3 text-white shadow-lg transition-all hover:bg-opacity-100'
+            >
+              ← 이전
+            </button>
+          )}
 
-        {project.settings.showHomeButton && (
-          <button
-            onClick={goToHome}
-            className='rounded-lg bg-gray-800 bg-opacity-80 px-6 py-3 text-white shadow-lg transition-all hover:bg-opacity-100'
-          >
-            🏠 처음으로
-          </button>
-        )}
-
-        <button
-          onClick={goToNextPage}
-          className='rounded-lg bg-blue-600 bg-opacity-80 px-6 py-3 text-white shadow-lg transition-all hover:bg-opacity-100'
-        >
-          다음 →
-        </button>
-      </div>
+          {project.settings.showHomeButton && (
+            <button
+              onClick={goToHome}
+              className='rounded-lg bg-gray-800 bg-opacity-80 px-6 py-3 text-white shadow-lg transition-all hover:bg-opacity-100'
+            >
+              🏠 처음으로
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 진행 상황 표시 */}
       {project.settings.showProgress && (

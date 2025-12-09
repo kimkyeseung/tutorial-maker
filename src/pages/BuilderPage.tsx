@@ -4,11 +4,12 @@ import PageList from '../components/builder/PageList'
 import FlowMap from '../components/builder/FlowMap'
 import ProjectSettings from '../components/builder/ProjectSettings'
 import type { Project, Page } from '../types/project'
-import { getAllProjects, saveProject } from '../utils/mediaStorage'
+import { getAllProjects, saveProject, getAppIcon, createBlobURL } from '../utils/mediaStorage'
 import { validateAllPages } from '../utils/pageValidation'
 import {
   buildProjectToExecutable,
   buildStandaloneExecutable,
+  type BuildProgress,
 } from '../utils/projectBuilder'
 import { exportProject, importProjectFromZip } from '../utils/projectExporter'
 
@@ -21,13 +22,33 @@ const BuilderPage: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>('list')
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null)
   const [isBuilding, setIsBuilding] = useState(false)
-  const [buildProgress, setBuildProgress] = useState<string>('')
+  const [buildProgress, setBuildProgress] = useState<BuildProgress | null>(null)
   const [showBuildMethodModal, setShowBuildMethodModal] = useState(false)
   const [pagesViewMode, setPagesViewMode] = useState<PagesViewMode>('list')
+  const [projectIcons, setProjectIcons] = useState<Record<string, string>>({})
 
   useEffect(() => {
     loadProjects()
   }, [])
+
+  // 프로젝트 아이콘 로드
+  useEffect(() => {
+    const loadIcons = async () => {
+      const icons: Record<string, string> = {}
+      for (const project of projects) {
+        if (project.appIcon && !projectIcons[project.id]) {
+          const icon = await getAppIcon(project.appIcon)
+          if (icon) {
+            icons[project.id] = createBlobURL(icon.blob)
+          }
+        }
+      }
+      if (Object.keys(icons).length > 0) {
+        setProjectIcons((prev) => ({ ...prev, ...icons }))
+      }
+    }
+    loadIcons()
+  }, [projects])
 
   const loadProjects = async () => {
     const allProjects = await getAllProjects()
@@ -157,12 +178,12 @@ const BuilderPage: React.FC = () => {
 
     try {
       setIsBuilding(true)
-      setBuildProgress('독립 실행 파일 빌드를 시작합니다...')
+      setBuildProgress({ message: '독립 실행 파일 빌드를 시작합니다...', percent: 0 })
 
       const success = await buildStandaloneExecutable(
         selectedProject,
-        (message) => {
-          setBuildProgress(message)
+        (progress) => {
+          setBuildProgress(progress)
         }
       )
 
@@ -183,7 +204,7 @@ const BuilderPage: React.FC = () => {
         '❌ 프로젝트 빌드에 실패했습니다.\n\n오류: ' + (error as Error).message
       )
     } finally {
-      setBuildProgress('')
+      setBuildProgress(null)
     }
   }
 
@@ -194,12 +215,12 @@ const BuilderPage: React.FC = () => {
 
     try {
       setIsBuilding(true)
-      setBuildProgress('뷰어 앱 방식 빌드를 시작합니다...')
+      setBuildProgress({ message: '뷰어 앱 방식 빌드를 시작합니다...', percent: 0 })
 
       const success = await buildProjectToExecutable(
         selectedProject,
-        (message) => {
-          setBuildProgress(message)
+        (progress) => {
+          setBuildProgress(progress)
         }
       )
 
@@ -220,7 +241,7 @@ const BuilderPage: React.FC = () => {
         '❌ 프로젝트 빌드에 실패했습니다.\n\n오류: ' + (error as Error).message
       )
     } finally {
-      setBuildProgress('')
+      setBuildProgress(null)
     }
   }
 
@@ -425,19 +446,31 @@ const BuilderPage: React.FC = () => {
       )}
 
       {/* 빌드 진행 상황 모달 */}
-      {isBuilding && (
+      {isBuilding && buildProgress && (
         <div className='fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50'>
           <div className='mx-4 w-full max-w-md rounded-lg bg-white p-8'>
             <h3 className='mb-4 text-xl font-bold'>프로젝트 빌드 중</h3>
-            <div className='mb-4'>
-              <div className='flex animate-pulse space-x-2'>
-                <div className='h-2 flex-1 rounded bg-purple-600'></div>
-                <div className='h-2 flex-1 rounded bg-purple-600'></div>
-                <div className='h-2 flex-1 rounded bg-purple-600'></div>
+            {/* 프로그레스 바 */}
+            <div className='mb-2'>
+              <div className='h-3 w-full overflow-hidden rounded-full bg-gray-200'>
+                <div
+                  className='h-full rounded-full bg-purple-600 transition-all duration-300'
+                  style={{ width: `${buildProgress.percent ?? 0}%` }}
+                />
               </div>
             </div>
-            <p className='text-sm text-gray-600'>{buildProgress}</p>
-            <p className='mt-2 text-xs text-gray-500'>
+            {/* 퍼센테이지 표시 */}
+            <div className='mb-3 text-right text-sm font-medium text-purple-600'>
+              {buildProgress.percent ?? 0}%
+            </div>
+            {/* 진행상황 메시지 */}
+            <p className='text-sm text-gray-600'>{buildProgress.message}</p>
+            {buildProgress.step && buildProgress.totalSteps && (
+              <p className='mt-1 text-xs text-gray-500'>
+                단계: {buildProgress.step} / {buildProgress.totalSteps}
+              </p>
+            )}
+            <p className='mt-3 text-xs text-gray-400'>
               잠시만 기다려주세요. 빌드가 완료될 때까지 창을 닫지 마세요.
             </p>
           </div>
@@ -467,16 +500,45 @@ const BuilderPage: React.FC = () => {
                   <div
                     key={project.id}
                     onClick={() => handleSelectProject(project)}
-                    className='cursor-pointer rounded-lg bg-white p-6 shadow transition-shadow hover:shadow-lg'
+                    className='cursor-pointer rounded-lg bg-white p-4 shadow transition-shadow hover:shadow-lg'
                   >
-                    <h3 className='mb-2 text-lg font-semibold'>
-                      {project.name}
-                    </h3>
-                    <p className='mb-4 text-sm text-gray-600'>
-                      {project.description || '설명 없음'}
-                    </p>
-                    <div className='text-xs text-gray-500'>
-                      페이지: {project.pages.length}개
+                    <div className='flex gap-4'>
+                      {/* 프로젝트 아이콘 */}
+                      <div className='h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-gray-100'>
+                        {projectIcons[project.id] ? (
+                          <img
+                            src={projectIcons[project.id]}
+                            alt={project.name}
+                            className='h-full w-full object-cover'
+                          />
+                        ) : (
+                          <div className='flex h-full w-full items-center justify-center text-2xl text-gray-400'>
+                            📁
+                          </div>
+                        )}
+                      </div>
+                      {/* 프로젝트 정보 */}
+                      <div className='min-w-0 flex-1'>
+                        <h3 className='truncate text-lg font-semibold'>
+                          {project.name}
+                        </h3>
+                        <p className='truncate text-sm text-gray-600'>
+                          {project.description || '설명 없음'}
+                        </p>
+                        <div className='mt-2 flex items-center gap-3 text-xs text-gray-500'>
+                          <span>페이지 {project.pages.length}개</span>
+                          <span>•</span>
+                          <span>
+                            {new Date(project.updatedAt).toLocaleDateString('ko-KR', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}
