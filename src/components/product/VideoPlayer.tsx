@@ -10,6 +10,7 @@ type VideoPlayerProps = {
   onButtonClick: (buttonId: string) => void
   onTouchAreaClick: (touchAreaId: string) => void
   isActive?: boolean
+  resumeSignal?: number
 }
 
 const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -19,6 +20,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onButtonClick,
   onTouchAreaClick,
   isActive = true,
+  resumeSignal = 0,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
@@ -26,7 +28,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // 활성 상태가 되면 비디오 재생, 비활성화되면 일시정지
   useEffect(() => {
-    if (page.mediaType === 'video' && videoRef.current) {
+    if (page.mediaType === 'video' && videoRef.current && mediaUrl) {
       if (isActive) {
         setHasEnded(false)
         videoRef.current.currentTime = 0
@@ -37,7 +39,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         videoRef.current.pause()
       }
     }
-  }, [isActive, page.mediaType])
+  }, [isActive, page.mediaType, mediaUrl])
 
   // 미디어 URL 변경 시 로드
   useEffect(() => {
@@ -45,6 +47,22 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       videoRef.current.load()
     }
   }, [mediaUrl, page.mediaType])
+
+  // 사용자 상호작용 이후 재생을 다시 시도 (빌드 후 자동재생 차단 대응)
+  useEffect(() => {
+    if (
+      page.mediaType !== 'video' ||
+      !isActive ||
+      !videoRef.current ||
+      !mediaUrl
+    ) {
+      return
+    }
+
+    videoRef.current.play().catch((err) => {
+      console.error('Failed to resume video after user action:', err)
+    })
+  }, [resumeSignal, isActive, page.mediaType, mediaUrl])
 
   const handleVideoEnded = () => {
     setHasEnded(true)
