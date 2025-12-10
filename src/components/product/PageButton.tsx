@@ -39,7 +39,7 @@ const PageButtonComponent: React.FC<PageButtonProps> = ({
   return (
     <button
       onClick={onClick}
-      className='absolute cursor-pointer transition-transform hover:scale-105 active:scale-95'
+      className='absolute cursor-pointer'
       style={{
         left: `${button.position.x}%`,
         top: `${button.position.y}%`,

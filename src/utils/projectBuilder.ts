@@ -1,8 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { save } from '@tauri-apps/plugin-dialog'
-import { mkdir, writeFile, BaseDirectory } from '@tauri-apps/plugin-fs'
-import type { Project } from '../types/project'
+import type { Project, BuildProject, EmbeddedMedia } from '../types/project'
 import { getAppIcon, getButtonImage, getMediaFile } from '../utils/mediaStorage'
 
 // Tauri 환경 확인 함수
@@ -17,54 +16,62 @@ export interface BuildProgress {
   totalSteps?: number
 }
 
-// 미디어 파일 수집 및 임시 저장 공통 함수
-async function collectAndSaveMedia(
+// Blob을 Base64로 변환
+async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const base64 = reader.result as string
+      // data:mime;base64, 부분 제거
+      const base64Data = base64.split(',')[1]
+      resolve(base64Data)
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+}
+
+// MIME 타입 추출
+function getMimeType(blob: Blob, mediaType: 'video' | 'image'): string {
+  if (blob.type) return blob.type
+  return mediaType === 'video' ? 'video/mp4' : 'image/png'
+}
+
+// 미디어를 Base64로 변환하여 BuildProject 생성
+async function createBuildProject(
   project: Project,
   onProgress?: (progress: BuildProgress) => void
-): Promise<{
-  mediaPaths: string[]
-  appIconPath: string | null
-}> {
+): Promise<BuildProject> {
   const mediaIds = new Set<string>()
+  const mediaTypeMap = new Map<string, 'video' | 'image'>()
 
   // 페이지 미디어 수집
   for (const page of project.pages) {
     if (page.mediaId) {
       mediaIds.add(page.mediaId)
+      mediaTypeMap.set(page.mediaId, page.mediaType)
     }
 
     // 버튼 이미지 수집
     for (const button of page.buttons) {
       if (button.imageId) {
         mediaIds.add(button.imageId)
+        mediaTypeMap.set(button.imageId, 'image')
       }
     }
   }
 
-  // 앱 아이콘은 별도로 처리
-  let appIconPath: string | null = null
-
-  // 미디어 파일들을 임시 디렉토리에 저장하고 경로 수집
-  const mediaPaths: string[] = []
-  const tempDirName = `temp_media_${Date.now()}`
   const mediaIdArray = Array.from(mediaIds)
   const totalMedia = mediaIdArray.length + (project.appIcon ? 1 : 0)
+  const embeddedMedia: EmbeddedMedia[] = []
 
-  // Temp 디렉토리 생성
-  try {
-    await mkdir(tempDirName, {
-      baseDir: BaseDirectory.Temp,
-      recursive: true,
-    })
-  } catch (error) {
-    console.error('임시 디렉토리 생성 실패:', error)
-  }
+  // 앱 아이콘 처리
+  let appIconBase64: string | undefined
 
-  // 앱 아이콘 저장
   if (project.appIcon) {
     if (onProgress) {
       onProgress({
-        message: '앱 아이콘 준비 중...',
+        message: '앱 아이콘 변환 중...',
         percent: 5,
         step: 1,
         totalSteps: totalMedia,
@@ -74,31 +81,20 @@ async function collectAndSaveMedia(
     try {
       const iconMedia = await getAppIcon(project.appIcon)
       if (iconMedia && iconMedia.blob) {
-        const arrayBuffer = await iconMedia.blob.arrayBuffer()
-        const uint8Array = new Uint8Array(arrayBuffer)
-
-        const fileName = `${project.appIcon}_${iconMedia.name}`
-        const filePath = `${tempDirName}/${fileName}`
-
-        await writeFile(filePath, uint8Array, {
-          baseDir: BaseDirectory.Temp,
-        })
-
-        appIconPath = await invoke<string>('get_temp_path', {
-          relativePath: filePath,
-        })
+        appIconBase64 = await blobToBase64(iconMedia.blob)
       }
     } catch (error) {
-      console.error('앱 아이콘 저장 실패:', error)
+      console.error('앱 아이콘 변환 실패:', error)
     }
   }
 
+  // 미디어 파일 변환
   for (let i = 0; i < mediaIdArray.length; i++) {
     const mediaId = mediaIdArray[i]
 
     if (onProgress) {
       onProgress({
-        message: `미디어 파일 준비 중... (${i + 1}/${mediaIdArray.length})`,
+        message: `미디어 변환 중... (${i + 1}/${mediaIdArray.length})`,
         percent: Math.round(((i + 1) / totalMedia) * 30),
         step: i + 1 + (project.appIcon ? 1 : 0),
         totalSteps: totalMedia,
@@ -106,35 +102,34 @@ async function collectAndSaveMedia(
     }
 
     try {
-      // IndexedDB에서 미디어 가져오기
-      let media = (await getMediaFile(mediaId)) || (await getButtonImage(mediaId))
+      const media =
+        (await getMediaFile(mediaId)) || (await getButtonImage(mediaId))
 
       if (media && media.blob) {
-        // Blob을 ArrayBuffer로 변환
-        const arrayBuffer = await media.blob.arrayBuffer()
-        const uint8Array = new Uint8Array(arrayBuffer)
+        const mediaType = mediaTypeMap.get(mediaId) || 'image'
+        const base64 = await blobToBase64(media.blob)
+        const mimeType = getMimeType(media.blob, mediaType)
 
-        // 임시 파일 경로 생성 (파일명만)
-        const fileName = `${mediaId}_${media.name}`
-        const filePath = `${tempDirName}/${fileName}`
-
-        // 임시 디렉토리에 파일 저장
-        await writeFile(filePath, uint8Array, {
-          baseDir: BaseDirectory.Temp,
+        embeddedMedia.push({
+          id: mediaId,
+          name: media.name,
+          mimeType,
+          base64,
         })
-
-        // Temp 디렉토리의 절대 경로를 백엔드에 전달
-        const tempPath = await invoke<string>('get_temp_path', {
-          relativePath: filePath,
-        })
-        mediaPaths.push(tempPath)
       }
     } catch (error) {
-      console.error(`미디어 파일 저장 실패 (${mediaId}):`, error)
+      console.error(`미디어 변환 실패 (${mediaId}):`, error)
     }
   }
 
-  return { mediaPaths, appIconPath }
+  // BuildProject 생성 (appIcon 제외)
+  const { appIcon, ...projectWithoutIcon } = project
+
+  return {
+    ...projectWithoutIcon,
+    embeddedMedia,
+    appIconBase64,
+  }
 }
 
 // 독립 실행 파일 빌드 (각 프로젝트마다 별도의 exe)
@@ -146,8 +141,12 @@ export async function buildStandaloneExecutable(
   if (!isTauriEnvironment()) {
     console.error('Tauri internals not found:', {
       hasWindow: typeof window !== 'undefined',
-      hasTauriInternals: typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window,
-      windowKeys: typeof window !== 'undefined' ? Object.keys(window).filter(k => k.includes('TAURI')) : []
+      hasTauriInternals:
+        typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window,
+      windowKeys:
+        typeof window !== 'undefined'
+          ? Object.keys(window).filter((k) => k.includes('TAURI'))
+          : [],
     })
     throw new Error(
       'Tauri 환경이 아닙니다. 앱을 Tauri 환경에서 실행해주세요. (npm run dev를 사용하세요)'
@@ -176,38 +175,34 @@ export async function buildStandaloneExecutable(
     // 진행 상황 리스너 등록 (Rust에서 오는 이벤트)
     const unlisten = await listen<string>('build-progress', (event) => {
       if (onProgress) {
-        // Rust에서 오는 메시지는 30% 이후 진행상황 (빌드 단계)
         onProgress({
           message: event.payload,
-          percent: 30 + Math.min(70, 70), // 빌드 단계는 30~100%
+          percent: 30 + Math.min(70, 70),
         })
       }
     })
 
     try {
       if (onProgress) {
-        onProgress({ message: '미디어 파일 준비 시작...', percent: 0 })
+        onProgress({ message: '미디어 파일 변환 시작...', percent: 0 })
       }
 
-      // 미디어 파일 수집 및 저장
-      const { mediaPaths, appIconPath } = await collectAndSaveMedia(
-        project,
-        onProgress
-      )
+      // 미디어를 Base64로 변환하여 BuildProject 생성
+      const buildProject = await createBuildProject(project, onProgress)
 
       if (onProgress) {
         onProgress({ message: '빌드 시작 중...', percent: 30 })
       }
 
-      // 프로젝트 데이터를 JSON으로 변환
-      const projectJson = JSON.stringify(project, null, 2)
+      // BuildProject를 JSON으로 변환
+      const projectJson = JSON.stringify(buildProject)
 
-      // Rust 백엔드 호출
+      // Rust 백엔드 호출 (미디어 경로 불필요)
       const result = await invoke<string>('build_standalone_executable', {
         projectJson,
         outputFile,
-        mediaPaths,
-        appIconPath,
+        mediaPaths: [], // 더 이상 사용하지 않음
+        appIconPath: null,
       })
 
       if (onProgress) {

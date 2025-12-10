@@ -61,3 +61,16 @@ export interface StoredMedia {
   type: 'video' | 'image' | 'button' | 'icon'
   createdAt: number
 }
+
+// 빌드된 프로젝트용 (미디어가 Base64로 포함됨)
+export interface EmbeddedMedia {
+  id: string
+  name: string
+  mimeType: string
+  base64: string
+}
+
+export interface BuildProject extends Omit<Project, 'appIcon'> {
+  embeddedMedia: EmbeddedMedia[]
+  appIconBase64?: string
+}

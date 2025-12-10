@@ -1,12 +1,84 @@
 use std::path::{Path, PathBuf};
 use std::fs;
 use std::env;
-use std::io::BufWriter;
+use std::io::{BufWriter, Read, Write, Seek, SeekFrom};
 use tauri::Emitter;
 use ico::{IconDir, IconDirEntry, IconImage, ResourceType};
 
 #[allow(unused_imports)]
 use image::GenericImageView;
+
+// 매직 바이트: exe 끝에 데이터가 있는지 확인하는 마커
+const MAGIC_BYTES: &[u8] = b"TUTORIALMAKER_DATA_V1";
+
+// exe 파일 끝에 프로젝트 데이터 추가
+fn append_data_to_exe(exe_path: &Path, data: &[u8]) -> Result<(), String> {
+    let mut file = fs::OpenOptions::new()
+        .append(true)
+        .open(exe_path)
+        .map_err(|e| format!("exe 파일 열기 실패: {}", e))?;
+
+    // 데이터 길이 (8바이트, little endian)
+    let data_len = data.len() as u64;
+
+    // 데이터 쓰기
+    file.write_all(data)
+        .map_err(|e| format!("데이터 쓰기 실패: {}", e))?;
+
+    // 데이터 길이 쓰기
+    file.write_all(&data_len.to_le_bytes())
+        .map_err(|e| format!("데이터 길이 쓰기 실패: {}", e))?;
+
+    // 매직 바이트 쓰기
+    file.write_all(MAGIC_BYTES)
+        .map_err(|e| format!("매직 바이트 쓰기 실패: {}", e))?;
+
+    Ok(())
+}
+
+// exe 파일 끝에서 프로젝트 데이터 읽기
+fn read_data_from_exe(exe_path: &Path) -> Result<Vec<u8>, String> {
+    let mut file = fs::File::open(exe_path)
+        .map_err(|e| format!("exe 파일 열기 실패: {}", e))?;
+
+    let file_size = file.metadata()
+        .map_err(|e| format!("파일 메타데이터 읽기 실패: {}", e))?
+        .len();
+
+    // 매직 바이트 확인
+    let magic_len = MAGIC_BYTES.len() as u64;
+    file.seek(SeekFrom::End(-(magic_len as i64)))
+        .map_err(|e| format!("파일 탐색 실패: {}", e))?;
+
+    let mut magic_buf = vec![0u8; MAGIC_BYTES.len()];
+    file.read_exact(&mut magic_buf)
+        .map_err(|e| format!("매직 바이트 읽기 실패: {}", e))?;
+
+    if magic_buf != MAGIC_BYTES {
+        return Err("내장된 프로젝트 데이터를 찾을 수 없습니다.".to_string());
+    }
+
+    // 데이터 길이 읽기 (매직 바이트 앞 8바이트)
+    file.seek(SeekFrom::End(-(magic_len as i64) - 8))
+        .map_err(|e| format!("파일 탐색 실패: {}", e))?;
+
+    let mut len_buf = [0u8; 8];
+    file.read_exact(&mut len_buf)
+        .map_err(|e| format!("데이터 길이 읽기 실패: {}", e))?;
+
+    let data_len = u64::from_le_bytes(len_buf);
+
+    // 데이터 읽기
+    let data_start = file_size - magic_len - 8 - data_len;
+    file.seek(SeekFrom::Start(data_start))
+        .map_err(|e| format!("파일 탐색 실패: {}", e))?;
+
+    let mut data = vec![0u8; data_len as usize];
+    file.read_exact(&mut data)
+        .map_err(|e| format!("데이터 읽기 실패: {}", e))?;
+
+    Ok(data)
+}
 
 // 이미지를 ICO 파일로 변환
 fn create_ico_file(source_image_path: &Path, output_ico_path: &Path) -> Result<(), String> {
@@ -190,18 +262,29 @@ fn get_temp_path(relative_path: String) -> Result<String, String> {
 
 #[tauri::command]
 fn read_project_file() -> Result<String, String> {
-    // 실행 파일과 같은 디렉토리에서 project.json 읽기
+    // 실행 파일에서 내장된 프로젝트 데이터 읽기
     let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let exe_dir = current_exe.parent()
-        .ok_or_else(|| "실행 파일 디렉토리를 찾을 수 없습니다.".to_string())?;
 
-    let project_file = exe_dir.join("project.json");
+    // exe 끝에서 데이터 읽기 시도
+    match read_data_from_exe(&current_exe) {
+        Ok(data) => {
+            String::from_utf8(data)
+                .map_err(|e| format!("프로젝트 데이터 디코딩 실패: {}", e))
+        }
+        Err(_) => {
+            // 내장 데이터가 없으면 project.json 파일에서 읽기 (개발 모드 호환)
+            let exe_dir = current_exe.parent()
+                .ok_or_else(|| "실행 파일 디렉토리를 찾을 수 없습니다.".to_string())?;
 
-    if !project_file.exists() {
-        return Err("project.json 파일을 찾을 수 없습니다.".to_string());
+            let project_file = exe_dir.join("project.json");
+
+            if !project_file.exists() {
+                return Err("프로젝트 데이터를 찾을 수 없습니다.".to_string());
+            }
+
+            fs::read_to_string(&project_file).map_err(|e| e.to_string())
+        }
     }
-
-    fs::read_to_string(&project_file).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -388,17 +471,12 @@ async fn build_standalone_executable(
         }
     }
 
-    // 8. 미디어 파일들을 출력 디렉토리에 복사
-    let final_media_dir = output_dir.join("media");
-    if media_dir.exists() {
-        copy_dir_recursive(&media_dir, &final_media_dir).map_err(|e| e.to_string())?;
-    }
+    // 8. 프로젝트 데이터를 exe 파일 끝에 추가 (단일 파일 배포)
+    let _ = app.emit("build-progress", "프로젝트 데이터 내장 중...");
+    let project_data = fs::read(&project_file).map_err(|e| e.to_string())?;
+    append_data_to_exe(&output_path, &project_data)?;
 
-    // 9. project.json을 출력 디렉토리에 복사
-    let final_project_file = output_dir.join("project.json");
-    fs::copy(&project_file, &final_project_file).map_err(|e| e.to_string())?;
-
-    // 10. 임시 빌드 디렉토리 삭제
+    // 9. 임시 빌드 디렉토리 삭제
     let _ = fs::remove_dir_all(&temp_build_dir);
 
     let _ = app.emit("build-progress", "빌드 완료!");
