@@ -1,7 +1,8 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { save } from '@tauri-apps/plugin-dialog'
-import type { Project, BuildProject, EmbeddedMedia } from '../types/project'
+import { writeFile, mkdir } from '@tauri-apps/plugin-fs'
+import type { Project, MediaBuildInfo } from '../types/project'
 import { getAppIcon, getButtonImage, getMediaFile } from '../utils/mediaStorage'
 
 // Tauri 환경 확인 함수
@@ -16,32 +17,32 @@ export interface BuildProgress {
   totalSteps?: number
 }
 
-// Blob을 Base64로 변환
-async function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      const base64 = reader.result as string
-      // data:mime;base64, 부분 제거
-      const base64Data = base64.split(',')[1]
-      resolve(base64Data)
-    }
-    reader.onerror = reject
-    reader.readAsDataURL(blob)
-  })
-}
-
 // MIME 타입 추출
 function getMimeType(blob: Blob, mediaType: 'video' | 'image'): string {
   if (blob.type) return blob.type
   return mediaType === 'video' ? 'video/mp4' : 'image/png'
 }
 
-// 미디어를 Base64로 변환하여 BuildProject 생성
-async function createBuildProject(
+// 미디어 파일 확장자 결정
+function getExtension(mimeType: string): string {
+  const map: Record<string, string> = {
+    'video/mp4': '.mp4',
+    'video/webm': '.webm',
+    'video/avi': '.avi',
+    'image/png': '.png',
+    'image/jpeg': '.jpg',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+  }
+  return map[mimeType] || ''
+}
+
+// 미디어 파일들을 임시 폴더에 저장하고 정보 반환
+async function prepareMediaFiles(
   project: Project,
+  tempDir: string,
   onProgress?: (progress: BuildProgress) => void
-): Promise<BuildProject> {
+): Promise<{ mediaFiles: MediaBuildInfo[]; appIconPath?: string }> {
   const mediaIds = new Set<string>()
   const mediaTypeMap = new Map<string, 'video' | 'image'>()
 
@@ -63,15 +64,19 @@ async function createBuildProject(
 
   const mediaIdArray = Array.from(mediaIds)
   const totalMedia = mediaIdArray.length + (project.appIcon ? 1 : 0)
-  const embeddedMedia: EmbeddedMedia[] = []
+  const mediaFiles: MediaBuildInfo[] = []
+
+  // 미디어 임시 폴더 생성
+  const mediaDir = `${tempDir}/media`
+  await mkdir(mediaDir, { recursive: true })
 
   // 앱 아이콘 처리
-  let appIconBase64: string | undefined
+  let appIconPath: string | undefined
 
   if (project.appIcon) {
     if (onProgress) {
       onProgress({
-        message: '앱 아이콘 변환 중...',
+        message: '앱 아이콘 저장 중...',
         percent: 5,
         step: 1,
         totalSteps: totalMedia,
@@ -81,20 +86,23 @@ async function createBuildProject(
     try {
       const iconMedia = await getAppIcon(project.appIcon)
       if (iconMedia && iconMedia.blob) {
-        appIconBase64 = await blobToBase64(iconMedia.blob)
+        const iconPath = `${tempDir}/app_icon.png`
+        const arrayBuffer = await iconMedia.blob.arrayBuffer()
+        await writeFile(iconPath, new Uint8Array(arrayBuffer))
+        appIconPath = iconPath
       }
     } catch (error) {
-      console.error('앱 아이콘 변환 실패:', error)
+      console.error('앱 아이콘 저장 실패:', error)
     }
   }
 
-  // 미디어 파일 변환
+  // 미디어 파일 저장
   for (let i = 0; i < mediaIdArray.length; i++) {
     const mediaId = mediaIdArray[i]
 
     if (onProgress) {
       onProgress({
-        message: `미디어 변환 중... (${i + 1}/${mediaIdArray.length})`,
+        message: `미디어 파일 준비 중... (${i + 1}/${mediaIdArray.length})`,
         percent: Math.round(((i + 1) / totalMedia) * 30),
         step: i + 1 + (project.appIcon ? 1 : 0),
         totalSteps: totalMedia,
@@ -107,29 +115,27 @@ async function createBuildProject(
 
       if (media && media.blob) {
         const mediaType = mediaTypeMap.get(mediaId) || 'image'
-        const base64 = await blobToBase64(media.blob)
         const mimeType = getMimeType(media.blob, mediaType)
+        const ext = getExtension(mimeType)
+        const filePath = `${mediaDir}/${mediaId}${ext}`
 
-        embeddedMedia.push({
+        // Blob을 파일로 저장
+        const arrayBuffer = await media.blob.arrayBuffer()
+        await writeFile(filePath, new Uint8Array(arrayBuffer))
+
+        mediaFiles.push({
           id: mediaId,
           name: media.name,
           mimeType,
-          base64,
+          filePath,
         })
       }
     } catch (error) {
-      console.error(`미디어 변환 실패 (${mediaId}):`, error)
+      console.error(`미디어 파일 저장 실패 (${mediaId}):`, error)
     }
   }
 
-  // BuildProject 생성 (appIcon 제외)
-  const { appIcon, ...projectWithoutIcon } = project
-
-  return {
-    ...projectWithoutIcon,
-    embeddedMedia,
-    appIconBase64,
-  }
+  return { mediaFiles, appIconPath }
 }
 
 // 독립 실행 파일 빌드 (각 프로젝트마다 별도의 exe)
@@ -184,25 +190,44 @@ export async function buildStandaloneExecutable(
 
     try {
       if (onProgress) {
-        onProgress({ message: '미디어 파일 변환 시작...', percent: 0 })
+        onProgress({ message: '임시 폴더 생성 중...', percent: 0 })
       }
 
-      // 미디어를 Base64로 변환하여 BuildProject 생성
-      const buildProject = await createBuildProject(project, onProgress)
+      // 임시 디렉토리 경로 가져오기
+      const buildTempDir = await invoke<string>('get_temp_path', {
+        relativePath: `tutorial_maker_build_${Date.now()}`,
+      })
+      await mkdir(buildTempDir, { recursive: true })
+
+      if (onProgress) {
+        onProgress({ message: '미디어 파일 준비 시작...', percent: 5 })
+      }
+
+      // 미디어 파일들을 임시 폴더에 저장
+      const { mediaFiles, appIconPath } = await prepareMediaFiles(
+        project,
+        buildTempDir,
+        onProgress
+      )
 
       if (onProgress) {
         onProgress({ message: '빌드 시작 중...', percent: 30 })
       }
 
-      // BuildProject를 JSON으로 변환
-      const projectJson = JSON.stringify(buildProject)
+      // 프로젝트 데이터 (appIcon 제외)
+      const { appIcon, ...projectWithoutIcon } = project
+      const projectJson = JSON.stringify(projectWithoutIcon)
 
-      // Rust 백엔드 호출 (미디어 경로 불필요)
-      const result = await invoke<string>('build_standalone_executable', {
+      // 미디어 파일 정보 배열
+      const mediaInfoJson = JSON.stringify(mediaFiles)
+
+      // Rust 백엔드 호출
+      const result = await invoke<string>('build_standalone_executable_v2', {
         projectJson,
+        mediaInfoJson,
         outputFile,
-        mediaPaths: [], // 더 이상 사용하지 않음
-        appIconPath: null,
+        appIconPath: appIconPath || null,
+        tempDir: buildTempDir,
       })
 
       if (onProgress) {

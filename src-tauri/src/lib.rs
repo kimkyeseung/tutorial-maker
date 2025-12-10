@@ -10,6 +10,41 @@ use image::GenericImageView;
 
 // 매직 바이트: exe 끝에 데이터가 있는지 확인하는 마커
 const MAGIC_BYTES: &[u8] = b"TUTORIALMAKER_DATA_V1";
+// 새 버전 매직 바이트 (바이너리 미디어 포함)
+const MAGIC_BYTES_V2: &[u8] = b"TUTORIALMAKER_DATA_V2";
+
+use serde::{Deserialize, Serialize};
+
+// 미디어 매니페스트 엔트리
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MediaManifestEntry {
+    id: String,
+    name: String,
+    mime_type: String,
+    offset: u64,
+    size: u64,
+}
+
+// 빌드 매니페스트
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BuildManifest {
+    project_json_offset: u64,
+    project_json_size: u64,
+    media: Vec<MediaManifestEntry>,
+    app_icon_offset: Option<u64>,
+    app_icon_size: Option<u64>,
+}
+
+// 미디어 빌드 정보 (프론트엔드에서 전달받음)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MediaBuildInfo {
+    id: String,
+    name: String,
+    #[serde(rename = "mimeType")]
+    mime_type: String,
+    #[serde(rename = "filePath")]
+    file_path: String,
+}
 
 // exe 파일 끝에 프로젝트 데이터 추가
 fn append_data_to_exe(exe_path: &Path, data: &[u8]) -> Result<(), String> {
@@ -484,6 +519,302 @@ async fn build_standalone_executable(
     Ok(output_file)
 }
 
+// V2: 바이너리 미디어를 exe에 직접 append하는 새 빌드 함수
+#[tauri::command]
+async fn build_standalone_executable_v2(
+    app: tauri::AppHandle,
+    project_json: String,
+    media_info_json: String,
+    output_file: String,
+    app_icon_path: Option<String>,
+    temp_dir: String,
+) -> Result<String, String> {
+    let output_path = PathBuf::from(&output_file);
+    let output_dir = output_path.parent()
+        .ok_or_else(|| "출력 디렉토리를 찾을 수 없습니다.".to_string())?;
+    let temp_build_dir = PathBuf::from(&temp_dir);
+
+    // 출력 디렉토리 생성
+    fs::create_dir_all(output_dir).map_err(|e| e.to_string())?;
+
+    let _ = app.emit("build-progress", "프로젝트 빌드 준비 중...");
+
+    // 미디어 정보 파싱
+    let media_files: Vec<MediaBuildInfo> = serde_json::from_str(&media_info_json)
+        .map_err(|e| format!("미디어 정보 파싱 실패: {}", e))?;
+
+    // 앱 아이콘 ICO 파일 생성 (임시 폴더에)
+    let mut custom_icon_path: Option<PathBuf> = None;
+
+    if let Some(icon_path) = &app_icon_path {
+        let source_icon = PathBuf::from(icon_path);
+        if source_icon.exists() {
+            let _ = app.emit("build-progress", "앱 아이콘 변환 중...");
+
+            let ico_path = temp_build_dir.join("custom_icon.ico");
+            match create_ico_file(&source_icon, &ico_path) {
+                Ok(_) => {
+                    custom_icon_path = Some(ico_path);
+                }
+                Err(e) => {
+                    let _ = app.emit("build-progress", &format!("아이콘 변환 경고: {} (기본 아이콘 사용)", e));
+                }
+            }
+        }
+    }
+
+    // Tauri 빌드 실행
+    let _ = app.emit("build-progress", "프로젝트 빌드 중... (몇 분 소요될 수 있습니다)");
+
+    let current_dir = env::current_dir().map_err(|e| e.to_string())?;
+    let project_root = if current_dir.join("src-tauri").exists() {
+        current_dir.clone()
+    } else {
+        current_dir.parent()
+            .ok_or_else(|| "프로젝트 루트를 찾을 수 없습니다.".to_string())?
+            .to_path_buf()
+    };
+
+    use std::process::Command;
+    let build_output = Command::new("cmd")
+        .args(&["/C", "npm", "run", "tauri:build:product"])
+        .current_dir(&project_root)
+        .output()
+        .map_err(|e| format!("빌드 명령 실행 실패: {}", e))?;
+
+    if !build_output.status.success() {
+        let stderr = String::from_utf8_lossy(&build_output.stderr);
+        let stdout = String::from_utf8_lossy(&build_output.stdout);
+        return Err(format!("빌드 실패:\n{}\n{}", stdout, stderr));
+    }
+
+    // 빌드된 실행 파일 찾기
+    let target_dir = project_root.join("src-tauri").join("target").join("release");
+    let built_exe = target_dir.join("app.exe");
+
+    if !built_exe.exists() {
+        return Err(format!(
+            "빌드된 실행 파일을 찾을 수 없습니다: {}",
+            built_exe.display()
+        ));
+    }
+
+    let _ = app.emit("build-progress", "빌드된 실행 파일 복사 중...");
+
+    // 빌드된 exe 복사
+    fs::copy(&built_exe, &output_path).map_err(|e| e.to_string())?;
+
+    // 커스텀 아이콘 적용
+    if let Some(ico_path) = &custom_icon_path {
+        let _ = app.emit("build-progress", "앱 아이콘 적용 중...");
+        match change_exe_icon(&output_path, ico_path) {
+            Ok(_) => {
+                let _ = app.emit("build-progress", "앱 아이콘 적용 완료!");
+            }
+            Err(e) => {
+                let _ = app.emit("build-progress", &format!("아이콘 적용 실패 (기본 아이콘 사용): {}", e));
+            }
+        }
+    }
+
+    // V2 데이터 append: 미디어 바이너리 + project.json + manifest
+    let _ = app.emit("build-progress", "프로젝트 데이터 내장 중...");
+
+    append_binary_data_v2(&output_path, &project_json, &media_files)?;
+
+    // 임시 빌드 디렉토리 삭제
+    let _ = fs::remove_dir_all(&temp_build_dir);
+
+    let _ = app.emit("build-progress", "빌드 완료!");
+
+    Ok(output_file)
+}
+
+// V2: 바이너리 데이터를 exe에 append
+fn append_binary_data_v2(
+    exe_path: &Path,
+    project_json: &str,
+    media_files: &[MediaBuildInfo],
+) -> Result<(), String> {
+    let mut file = fs::OpenOptions::new()
+        .append(true)
+        .open(exe_path)
+        .map_err(|e| format!("exe 파일 열기 실패: {}", e))?;
+
+    // 현재 파일 끝 위치 (데이터 시작점)
+    let data_start = file.seek(SeekFrom::End(0))
+        .map_err(|e| format!("파일 탐색 실패: {}", e))?;
+
+    let mut manifest = BuildManifest {
+        project_json_offset: 0,
+        project_json_size: 0,
+        media: Vec::new(),
+        app_icon_offset: None,
+        app_icon_size: None,
+    };
+
+    let mut current_offset = data_start;
+
+    // 1. 미디어 파일들을 바이너리로 append
+    for media_info in media_files {
+        let media_path = PathBuf::from(&media_info.file_path);
+        if media_path.exists() {
+            let media_data = fs::read(&media_path)
+                .map_err(|e| format!("미디어 파일 읽기 실패 ({}): {}", media_info.id, e))?;
+
+            let media_size = media_data.len() as u64;
+
+            file.write_all(&media_data)
+                .map_err(|e| format!("미디어 데이터 쓰기 실패: {}", e))?;
+
+            manifest.media.push(MediaManifestEntry {
+                id: media_info.id.clone(),
+                name: media_info.name.clone(),
+                mime_type: media_info.mime_type.clone(),
+                offset: current_offset,
+                size: media_size,
+            });
+
+            current_offset += media_size;
+        }
+    }
+
+    // 2. project.json append
+    let project_bytes = project_json.as_bytes();
+    manifest.project_json_offset = current_offset;
+    manifest.project_json_size = project_bytes.len() as u64;
+
+    file.write_all(project_bytes)
+        .map_err(|e| format!("프로젝트 데이터 쓰기 실패: {}", e))?;
+
+    current_offset += manifest.project_json_size;
+
+    // 3. manifest JSON append
+    let manifest_json = serde_json::to_string(&manifest)
+        .map_err(|e| format!("매니페스트 직렬화 실패: {}", e))?;
+    let manifest_bytes = manifest_json.as_bytes();
+    let manifest_size = manifest_bytes.len() as u64;
+
+    file.write_all(manifest_bytes)
+        .map_err(|e| format!("매니페스트 쓰기 실패: {}", e))?;
+
+    // 4. manifest 크기 (8바이트, little endian)
+    file.write_all(&manifest_size.to_le_bytes())
+        .map_err(|e| format!("매니페스트 크기 쓰기 실패: {}", e))?;
+
+    // 5. 매직 바이트 V2
+    file.write_all(MAGIC_BYTES_V2)
+        .map_err(|e| format!("매직 바이트 쓰기 실패: {}", e))?;
+
+    Ok(())
+}
+
+// V2: exe 파일에서 매니페스트 읽기
+fn read_manifest_from_exe(exe_path: &Path) -> Result<BuildManifest, String> {
+    let mut file = fs::File::open(exe_path)
+        .map_err(|e| format!("exe 파일 열기 실패: {}", e))?;
+
+    // 매직 바이트 V2 확인
+    let magic_len = MAGIC_BYTES_V2.len() as i64;
+    file.seek(SeekFrom::End(-magic_len))
+        .map_err(|e| format!("파일 탐색 실패: {}", e))?;
+
+    let mut magic_buf = vec![0u8; MAGIC_BYTES_V2.len()];
+    file.read_exact(&mut magic_buf)
+        .map_err(|e| format!("매직 바이트 읽기 실패: {}", e))?;
+
+    if magic_buf != MAGIC_BYTES_V2 {
+        return Err("V2 데이터 포맷이 아닙니다.".to_string());
+    }
+
+    // 매니페스트 크기 읽기
+    file.seek(SeekFrom::End(-magic_len - 8))
+        .map_err(|e| format!("파일 탐색 실패: {}", e))?;
+
+    let mut len_buf = [0u8; 8];
+    file.read_exact(&mut len_buf)
+        .map_err(|e| format!("매니페스트 크기 읽기 실패: {}", e))?;
+
+    let manifest_size = u64::from_le_bytes(len_buf);
+
+    // 매니페스트 읽기
+    file.seek(SeekFrom::End(-magic_len - 8 - manifest_size as i64))
+        .map_err(|e| format!("파일 탐색 실패: {}", e))?;
+
+    let mut manifest_buf = vec![0u8; manifest_size as usize];
+    file.read_exact(&mut manifest_buf)
+        .map_err(|e| format!("매니페스트 읽기 실패: {}", e))?;
+
+    let manifest: BuildManifest = serde_json::from_slice(&manifest_buf)
+        .map_err(|e| format!("매니페스트 파싱 실패: {}", e))?;
+
+    Ok(manifest)
+}
+
+// V2: exe 파일에서 프로젝트 JSON 읽기
+#[tauri::command]
+fn read_project_file_v2() -> Result<String, String> {
+    let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
+
+    // V2 매니페스트 읽기 시도
+    match read_manifest_from_exe(&current_exe) {
+        Ok(manifest) => {
+            let mut file = fs::File::open(&current_exe)
+                .map_err(|e| format!("exe 파일 열기 실패: {}", e))?;
+
+            file.seek(SeekFrom::Start(manifest.project_json_offset))
+                .map_err(|e| format!("파일 탐색 실패: {}", e))?;
+
+            let mut project_buf = vec![0u8; manifest.project_json_size as usize];
+            file.read_exact(&mut project_buf)
+                .map_err(|e| format!("프로젝트 데이터 읽기 실패: {}", e))?;
+
+            String::from_utf8(project_buf)
+                .map_err(|e| format!("프로젝트 데이터 디코딩 실패: {}", e))
+        }
+        Err(_) => {
+            // V2 실패시 V1 또는 파일 시도
+            read_project_file()
+        }
+    }
+}
+
+// V2: exe 파일에서 미디어 데이터 읽기
+#[tauri::command]
+fn read_embedded_media(media_id: String) -> Result<Vec<u8>, String> {
+    let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
+
+    let manifest = read_manifest_from_exe(&current_exe)?;
+
+    // 해당 미디어 찾기
+    let media_entry = manifest.media.iter()
+        .find(|m| m.id == media_id)
+        .ok_or_else(|| format!("미디어를 찾을 수 없습니다: {}", media_id))?;
+
+    let mut file = fs::File::open(&current_exe)
+        .map_err(|e| format!("exe 파일 열기 실패: {}", e))?;
+
+    file.seek(SeekFrom::Start(media_entry.offset))
+        .map_err(|e| format!("파일 탐색 실패: {}", e))?;
+
+    let mut media_buf = vec![0u8; media_entry.size as usize];
+    file.read_exact(&mut media_buf)
+        .map_err(|e| format!("미디어 데이터 읽기 실패: {}", e))?;
+
+    Ok(media_buf)
+}
+
+// V2: 미디어 매니페스트 가져오기
+#[tauri::command]
+fn get_media_manifest() -> Result<String, String> {
+    let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
+
+    let manifest = read_manifest_from_exe(&current_exe)?;
+
+    serde_json::to_string(&manifest.media)
+        .map_err(|e| format!("매니페스트 직렬화 실패: {}", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -500,7 +831,7 @@ pub fn run() {
       }
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![build_project, get_temp_path, build_standalone_executable, read_project_file, get_media_path, read_media_file])
+    .invoke_handler(tauri::generate_handler![build_project, get_temp_path, build_standalone_executable, build_standalone_executable_v2, read_project_file, read_project_file_v2, get_media_path, read_media_file, read_embedded_media, get_media_manifest])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

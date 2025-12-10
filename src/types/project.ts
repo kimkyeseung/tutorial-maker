@@ -62,7 +62,7 @@ export interface StoredMedia {
   createdAt: number
 }
 
-// 빌드된 프로젝트용 (미디어가 Base64로 포함됨)
+// 빌드된 프로젝트용 (미디어가 Base64로 포함됨) - 작은 프로젝트용
 export interface EmbeddedMedia {
   id: string
   name: string
@@ -73,4 +73,36 @@ export interface EmbeddedMedia {
 export interface BuildProject extends Omit<Project, 'appIcon'> {
   embeddedMedia: EmbeddedMedia[]
   appIconBase64?: string
+}
+
+// 바이너리 빌드용 (큰 프로젝트) - 미디어가 exe에 바이너리로 포함됨
+export interface MediaManifestEntry {
+  id: string
+  name: string
+  mimeType: string
+  offset: number // exe 내 시작 위치
+  size: number // 바이트 크기
+}
+
+export interface BuildManifest {
+  projectJsonOffset: number
+  projectJsonSize: number
+  media: MediaManifestEntry[]
+  appIconOffset?: number
+  appIconSize?: number
+}
+
+// Rust로 전달할 미디어 정보
+export interface MediaBuildInfo {
+  id: string
+  name: string
+  mimeType: string
+  filePath: string // 임시 파일 경로
+}
+
+// Rust로 전달할 빌드 요청
+export interface BinaryBuildRequest {
+  project: Omit<Project, 'appIcon'>
+  mediaFiles: MediaBuildInfo[]
+  appIconPath?: string
 }
