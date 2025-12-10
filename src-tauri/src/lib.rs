@@ -1,7 +1,99 @@
 use std::path::{Path, PathBuf};
 use std::fs;
 use std::env;
+use std::io::BufWriter;
 use tauri::Emitter;
+use ico::{IconDir, IconDirEntry, IconImage, ResourceType};
+
+#[allow(unused_imports)]
+use image::GenericImageView;
+
+// 이미지를 ICO 파일로 변환
+fn create_ico_file(source_image_path: &Path, output_ico_path: &Path) -> Result<(), String> {
+    let img = image::open(source_image_path)
+        .map_err(|e| format!("이미지 로드 실패: {}", e))?;
+
+    let ico_sizes = [16u32, 24, 32, 48, 64, 128, 256];
+    let mut icon_dir = IconDir::new(ResourceType::Icon);
+
+    for size in ico_sizes.iter() {
+        let resized = img.resize_exact(*size, *size, image::imageops::FilterType::Lanczos3);
+        let rgba = resized.to_rgba8();
+        let (width, height) = rgba.dimensions();
+
+        let icon_image = IconImage::from_rgba_data(width, height, rgba.into_raw());
+        icon_dir.add_entry(IconDirEntry::encode(&icon_image)
+            .map_err(|e| format!("ICO 엔트리 인코딩 실패: {}", e))?);
+    }
+
+    let ico_file = fs::File::create(output_ico_path)
+        .map_err(|e| format!("ICO 파일 생성 실패: {}", e))?;
+    icon_dir.write(BufWriter::new(ico_file))
+        .map_err(|e| format!("ICO 파일 쓰기 실패: {}", e))?;
+
+    Ok(())
+}
+
+// rcedit 다운로드
+fn download_rcedit(target_path: &Path) -> Result<(), String> {
+    use std::process::Command;
+
+    let url = "https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe";
+
+    // curl 사용하여 다운로드
+    let output = Command::new("curl")
+        .args(&[
+            "-L",
+            "-o",
+            &target_path.to_string_lossy(),
+            url,
+        ])
+        .output()
+        .map_err(|e| format!("curl 실행 실패: {}", e))?;
+
+    if !output.status.success() {
+        let error = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("rcedit 다운로드 실패: {}", error));
+    }
+
+    Ok(())
+}
+
+// rcedit를 사용하여 exe 파일의 아이콘 변경
+fn change_exe_icon(exe_path: &Path, ico_path: &Path) -> Result<(), String> {
+    use std::process::Command;
+
+    // rcedit 경로 (LOCALAPPDATA/tauri에 저장)
+    let local_app_data = env::var("LOCALAPPDATA")
+        .map_err(|_| "LOCALAPPDATA 환경변수를 찾을 수 없습니다.")?;
+    let tauri_dir = PathBuf::from(&local_app_data).join("tauri");
+    let rcedit_path = tauri_dir.join("rcedit-x64.exe");
+
+    // rcedit가 없으면 다운로드
+    if !rcedit_path.exists() {
+        // tauri 디렉토리 생성
+        fs::create_dir_all(&tauri_dir)
+            .map_err(|e| format!("tauri 디렉토리 생성 실패: {}", e))?;
+
+        download_rcedit(&rcedit_path)?;
+    }
+
+    let output = Command::new(&rcedit_path)
+        .args(&[
+            exe_path.to_string_lossy().to_string(),
+            "--set-icon".to_string(),
+            ico_path.to_string_lossy().to_string(),
+        ])
+        .output()
+        .map_err(|e| format!("rcedit 실행 실패: {}", e))?;
+
+    if !output.status.success() {
+        let error = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("아이콘 변경 실패: {}", error));
+    }
+
+    Ok(())
+}
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     if !dst.exists() {
@@ -170,9 +262,8 @@ async fn build_standalone_executable(
     project_json: String,
     output_file: String,
     media_paths: Vec<String>,
+    app_icon_path: Option<String>,
 ) -> Result<String, String> {
-    use std::process::Command;
-
     let output_path = PathBuf::from(&output_file);
     let output_dir = output_path.parent()
         .ok_or_else(|| "출력 디렉토리를 찾을 수 없습니다.".to_string())?;
@@ -211,8 +302,6 @@ async fn build_standalone_executable(
         }
     }
 
-    let _ = app.emit("build-progress", "Tauri 프로젝트 빌드 중... (시간이 걸릴 수 있습니다)");
-
     // 3. 현재 프로젝트의 소스 코드를 임시 빌드 디렉토리에 복사
     let current_dir = env::current_dir().map_err(|e| e.to_string())?;
 
@@ -225,32 +314,45 @@ async fn build_standalone_executable(
             .to_path_buf()
     };
 
-    // 4. Tauri 빌드 명령 실행 (npm을 통해, product 모드로)
-    let _ = app.emit("build-progress", "뷰어 앱 빌드 중... (이 단계는 몇 분 걸릴 수 있습니다)");
+    // 4. 앱 아이콘 ICO 파일 생성 (임시 폴더에)
+    let mut custom_icon_path: Option<PathBuf> = None;
 
-    let build_output = if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .args(&["/C", "npm", "run", "tauri:build:product"])
-            .current_dir(&project_root)
-            .output()
-            .map_err(|e| format!("npm 실행 실패: {}", e))?
-    } else {
-        Command::new("npm")
-            .args(&["run", "tauri:build:product"])
-            .current_dir(&project_root)
-            .env("VITE_APP_MODE", "product")
-            .output()
-            .map_err(|e| format!("npm 실행 실패: {}", e))?
-    };
+    if let Some(icon_path) = &app_icon_path {
+        let source_icon = PathBuf::from(icon_path);
+        if source_icon.exists() {
+            let _ = app.emit("build-progress", "앱 아이콘 변환 중...");
 
-    if !build_output.status.success() {
-        let error_msg = String::from_utf8_lossy(&build_output.stderr);
-        return Err(format!("빌드 실패: {}", error_msg));
+            // 임시 폴더에 ICO 파일 생성
+            let ico_path = temp_build_dir.join("custom_icon.ico");
+            match create_ico_file(&source_icon, &ico_path) {
+                Ok(_) => {
+                    custom_icon_path = Some(ico_path);
+                }
+                Err(e) => {
+                    let _ = app.emit("build-progress", &format!("아이콘 변환 경고: {} (기본 아이콘 사용)", e));
+                }
+            }
+        }
     }
 
-    let _ = app.emit("build-progress", "빌드된 실행 파일 복사 중...");
+    // 5. Tauri 빌드 실행
+    let _ = app.emit("build-progress", "프로젝트 빌드 중... (몇 분 소요될 수 있습니다)");
 
-    // 5. 빌드된 실행 파일 찾기
+    // npm run tauri:build:product 실행
+    use std::process::Command;
+    let build_output = Command::new("cmd")
+        .args(&["/C", "npm", "run", "tauri:build:product"])
+        .current_dir(&project_root)
+        .output()
+        .map_err(|e| format!("빌드 명령 실행 실패: {}", e))?;
+
+    if !build_output.status.success() {
+        let stderr = String::from_utf8_lossy(&build_output.stderr);
+        let stdout = String::from_utf8_lossy(&build_output.stdout);
+        return Err(format!("빌드 실패:\n{}\n{}", stdout, stderr));
+    }
+
+    // 빌드된 실행 파일 찾기
     let target_dir = project_root.join("src-tauri").join("target").join("release");
     let built_exe = if cfg!(target_os = "windows") {
         target_dir.join("app.exe")
@@ -261,23 +363,42 @@ async fn build_standalone_executable(
     };
 
     if !built_exe.exists() {
-        return Err("빌드된 실행 파일을 찾을 수 없습니다.".to_string());
+        return Err(format!(
+            "빌드된 실행 파일을 찾을 수 없습니다: {}",
+            built_exe.display()
+        ));
     }
+
+    let _ = app.emit("build-progress", "빌드된 실행 파일 복사 중...");
 
     // 6. 빌드된 실행 파일과 리소스를 최종 출력 위치로 복사
     fs::copy(&built_exe, &output_path).map_err(|e| e.to_string())?;
 
-    // 7. 미디어 파일들을 출력 디렉토리에 복사
+    // 7. 커스텀 아이콘이 있으면 exe 파일의 아이콘 변경
+    if let Some(ico_path) = &custom_icon_path {
+        let _ = app.emit("build-progress", "앱 아이콘 적용 중...");
+        match change_exe_icon(&output_path, ico_path) {
+            Ok(_) => {
+                let _ = app.emit("build-progress", "앱 아이콘 적용 완료!");
+            }
+            Err(e) => {
+                // 아이콘 변경 실패해도 빌드는 계속 진행
+                let _ = app.emit("build-progress", &format!("아이콘 적용 실패 (기본 아이콘 사용): {}", e));
+            }
+        }
+    }
+
+    // 8. 미디어 파일들을 출력 디렉토리에 복사
     let final_media_dir = output_dir.join("media");
     if media_dir.exists() {
         copy_dir_recursive(&media_dir, &final_media_dir).map_err(|e| e.to_string())?;
     }
 
-    // 8. project.json을 출력 디렉토리에 복사
+    // 9. project.json을 출력 디렉토리에 복사
     let final_project_file = output_dir.join("project.json");
     fs::copy(&project_file, &final_project_file).map_err(|e| e.to_string())?;
 
-    // 9. 임시 빌드 디렉토리 삭제
+    // 10. 임시 빌드 디렉토리 삭제
     let _ = fs::remove_dir_all(&temp_build_dir);
 
     let _ = app.emit("build-progress", "빌드 완료!");
