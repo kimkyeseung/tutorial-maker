@@ -6,6 +6,7 @@ import TouchAreaComponent from './TouchAreaComponent'
 type VideoPlayerProps = {
   page: Page
   mediaUrl: string
+  buttonImageUrls?: Record<string, string>
   onVideoEnd: () => void
   onButtonClick: (buttonId: string) => void
   onTouchAreaClick: (touchAreaId: string) => void
@@ -16,6 +17,7 @@ type VideoPlayerProps = {
 const VideoPlayer: React.FC<VideoPlayerProps> = ({
   page,
   mediaUrl,
+  buttonImageUrls = {},
   onVideoEnd,
   onButtonClick,
   onTouchAreaClick,
@@ -116,6 +118,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           <PageButton
             key={button.id}
             button={button}
+            imageUrl={buttonImageUrls[button.imageId]}
             onClick={() => onButtonClick(button.id)}
             isVisible={isVisible}
           />

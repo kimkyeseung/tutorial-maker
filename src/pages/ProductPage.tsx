@@ -9,7 +9,7 @@ import { useProductProject } from '../hooks/useProductProject'
 import { usePageNavigation } from '../hooks/usePageNavigation'
 
 const ProductPage: React.FC = () => {
-  const { project, mediaUrls, isLoading } = useProductProject()
+  const { project, mediaUrls, buttonImageUrls, isLoading } = useProductProject()
   const {
     currentPageIndex,
     currentPage,
@@ -166,6 +166,7 @@ const ProductPage: React.FC = () => {
               <VideoPlayer
                 page={page}
                 mediaUrl={mediaUrl}
+                buttonImageUrls={buttonImageUrls}
                 onVideoEnd={isCurrentPage ? handleVideoEnd : () => {}}
                 onButtonClick={isCurrentPage ? handleButtonClick : () => {}}
                 onTouchAreaClick={

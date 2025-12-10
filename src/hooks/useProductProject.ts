@@ -1,10 +1,18 @@
 import { useState, useEffect } from 'react'
 import type { Project } from '../types/project'
-import { getAllProjects, getMediaFile, createBlobURL } from '../utils/mediaStorage'
+import {
+  getAllProjects,
+  getMediaFile,
+  getButtonImage,
+  createBlobURL,
+} from '../utils/mediaStorage'
 
 export function useProductProject() {
   const [project, setProject] = useState<Project | null>(null)
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({})
+  const [buttonImageUrls, setButtonImageUrls] = useState<Record<string, string>>(
+    {}
+  )
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -73,6 +81,35 @@ export function useProductProject() {
       }
 
       setMediaUrls(urls)
+
+      // 버튼 이미지 로드
+      const buttonUrls: Record<string, string> = {}
+      for (const page of projectData.pages) {
+        for (const button of page.buttons) {
+          if (button.imageId && !buttonUrls[button.imageId]) {
+            if (isProductMode) {
+              try {
+                const { invoke } = await import('@tauri-apps/api/core')
+                const mediaData = await invoke<number[]>('read_media_file', {
+                  mediaId: button.imageId,
+                })
+                const uint8Array = new Uint8Array(mediaData)
+                const blob = new Blob([uint8Array], { type: 'image/png' })
+                buttonUrls[button.imageId] = URL.createObjectURL(blob)
+              } catch (e) {
+                console.error('Failed to load button image:', button.imageId, e)
+              }
+            } else {
+              const image = await getButtonImage(button.imageId)
+              if (image) {
+                buttonUrls[button.imageId] = createBlobURL(image.blob)
+              }
+            }
+          }
+        }
+      }
+      setButtonImageUrls(buttonUrls)
+
       setIsLoading(false)
     } catch (error) {
       console.error('Failed to load project data:', error)
@@ -80,5 +117,5 @@ export function useProductProject() {
     }
   }
 
-  return { project, mediaUrls, isLoading }
+  return { project, mediaUrls, buttonImageUrls, isLoading }
 }

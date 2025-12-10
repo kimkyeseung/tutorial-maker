@@ -4,27 +4,35 @@ import { getButtonImage, createBlobURL } from '../../utils/mediaStorage'
 
 type PageButtonProps = {
   button: PageButton
+  imageUrl?: string // 외부에서 전달받은 이미지 URL (프로덕트 모드용)
   onClick: () => void
   isVisible: boolean
 }
 
 const PageButtonComponent: React.FC<PageButtonProps> = ({
   button,
+  imageUrl: externalImageUrl,
   onClick,
   isVisible,
 }) => {
-  const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const [localImageUrl, setLocalImageUrl] = useState<string | null>(null)
 
+  // 외부 URL이 없을 때만 IndexedDB에서 로드 (개발 모드)
   useEffect(() => {
-    loadButtonImage()
-  }, [button.imageId])
+    if (!externalImageUrl) {
+      loadButtonImage()
+    }
+  }, [button.imageId, externalImageUrl])
 
   const loadButtonImage = async () => {
     const image = await getButtonImage(button.imageId)
     if (image) {
-      setImageUrl(createBlobURL(image.blob))
+      setLocalImageUrl(createBlobURL(image.blob))
     }
   }
+
+  // 외부 URL 우선, 없으면 로컬 URL 사용
+  const imageUrl = externalImageUrl || localImageUrl
 
   if (!isVisible) return null
 
