@@ -16,7 +16,11 @@ import { exportProject, importProjectFromZip } from '../utils/projectExporter'
 type View = 'list' | 'settings' | 'pages'
 type PagesViewMode = 'list' | 'flowmap'
 
-const BuilderPage: React.FC = () => {
+interface BuilderPageProps {
+  onPreview?: (projectId: string) => void
+}
+
+const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview }) => {
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [currentView, setCurrentView] = useState<View>('list')
@@ -551,6 +555,15 @@ const BuilderPage: React.FC = () => {
                 ← 프로젝트 목록으로
               </button>
               <div className='flex gap-2'>
+                {onPreview && (
+                  <button
+                    onClick={() => onPreview(selectedProject.id)}
+                    disabled={isBuilding || selectedProject.pages.length === 0}
+                    className='flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-white hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50'
+                  >
+                    미리보기
+                  </button>
+                )}
                 <button
                   onClick={handleExportProject}
                   disabled={isBuilding}
@@ -614,6 +627,15 @@ const BuilderPage: React.FC = () => {
                     🗺️ 흐름도
                   </button>
                 </div>
+                {onPreview && (
+                  <button
+                    onClick={() => onPreview(selectedProject.id)}
+                    disabled={isBuilding || selectedProject.pages.length === 0}
+                    className='flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-white hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50'
+                  >
+                    미리보기
+                  </button>
+                )}
                 <button
                   onClick={handleExportProject}
                   disabled={isBuilding}

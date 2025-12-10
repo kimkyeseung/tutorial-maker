@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { Project, BuildProject } from '../types/project'
 import {
-  getAllProjects,
+  getProject,
   getMediaFile,
   getButtonImage,
   createBlobURL,
@@ -19,7 +19,7 @@ function base64ToBlobUrl(base64: string, mimeType: string): string {
   return URL.createObjectURL(blob)
 }
 
-export function useProductProject() {
+export function useProductProject(projectId?: string) {
   const [project, setProject] = useState<Project | null>(null)
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({})
   const [buttonImageUrls, setButtonImageUrls] = useState<Record<string, string>>(
@@ -29,7 +29,7 @@ export function useProductProject() {
 
   useEffect(() => {
     loadProjectData()
-  }, [])
+  }, [projectId])
 
   const loadProjectData = async () => {
     try {
@@ -97,14 +97,18 @@ export function useProductProject() {
       }
 
       // 개발 모드: IndexedDB에서 로드
-      const projects = await getAllProjects()
-      if (projects.length === 0) {
-        console.error('No projects found')
+      if (!projectId) {
+        console.error('No project ID provided for preview')
         setIsLoading(false)
         return
       }
 
-      const projectData = projects[0]
+      const projectData = await getProject(projectId)
+      if (!projectData) {
+        console.error('Project not found:', projectId)
+        setIsLoading(false)
+        return
+      }
       setProject(projectData)
 
       // 페이지 미디어 로드

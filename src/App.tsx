@@ -8,6 +8,7 @@ function App() {
 
   // 개발 모드에서 테스트를 위한 상태
   const [showProduct, setShowProduct] = useState(false)
+  const [previewProjectId, setPreviewProjectId] = useState<string | null>(null)
 
   if (isProductMode) {
     // 빌드된 실행 전용 앱: 프로덕트 페이지만 표시
@@ -15,31 +16,31 @@ function App() {
   }
 
   // 개발 모드
-  if (showProduct) {
+  if (showProduct && previewProjectId) {
     return (
       <div className='relative'>
         <button
-          onClick={() => setShowProduct(false)}
+          onClick={() => {
+            setShowProduct(false)
+            setPreviewProjectId(null)
+          }}
           className='absolute left-4 top-4 z-50 rounded-lg bg-red-600 px-4 py-2 text-white shadow-lg hover:bg-red-700'
         >
           ← 빌더로 돌아가기
         </button>
-        <ProductPage />
+        <ProductPage projectId={previewProjectId} />
       </div>
     )
   }
 
   // 빌더 앱: 제작 UI
   return (
-    <div className='relative'>
-      <button
-        onClick={() => setShowProduct(true)}
-        className='fixed bottom-4 right-4 z-50 rounded-lg bg-green-600 px-4 py-2 text-white shadow-lg hover:bg-green-700'
-      >
-        🎬 미리보기 모드
-      </button>
-      <BuilderPage />
-    </div>
+    <BuilderPage
+      onPreview={(projectId) => {
+        setPreviewProjectId(projectId)
+        setShowProduct(true)
+      }}
+    />
   )
 }
 

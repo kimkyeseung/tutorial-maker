@@ -8,8 +8,13 @@ import ConfirmDialog from '../components/common/ConfirmDialog'
 import { useProductProject } from '../hooks/useProductProject'
 import { usePageNavigation } from '../hooks/usePageNavigation'
 
-const ProductPage: React.FC = () => {
-  const { project, mediaUrls, buttonImageUrls, isLoading } = useProductProject()
+interface ProductPageProps {
+  projectId?: string // 개발 모드 미리보기에서 특정 프로젝트 ID 전달
+}
+
+const ProductPage: React.FC<ProductPageProps> = ({ projectId }) => {
+  const { project, mediaUrls, buttonImageUrls, isLoading } =
+    useProductProject(projectId)
   const {
     currentPageIndex,
     currentPage,
