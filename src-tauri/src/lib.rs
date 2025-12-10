@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::fs;
 use std::env;
 use std::io::{BufWriter, Read, Write, Seek, SeekFrom};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use ico::{IconDir, IconDirEntry, IconImage, ResourceType};
 
 #[allow(unused_imports)]
@@ -519,6 +519,102 @@ async fn build_standalone_executable(
     Ok(output_file)
 }
 
+// 번들된 product-template.exe 찾기
+fn find_bundled_template(app: &tauri::AppHandle) -> Option<PathBuf> {
+    // 유효한 exe인지 확인하는 함수 (최소 1MB 이상)
+    let is_valid_exe = |path: &PathBuf| -> bool {
+        if let Ok(metadata) = fs::metadata(path) {
+            metadata.len() > 1_000_000  // 1MB 이상이면 유효한 exe로 간주
+        } else {
+            false
+        }
+    };
+
+    // Tauri 리소스 경로에서 찾기
+    if let Ok(resource_path) = app.path().resource_dir() {
+        let template_path = resource_path.join("product-template.exe");
+        if template_path.exists() && is_valid_exe(&template_path) {
+            return Some(template_path);
+        }
+    }
+
+    // 실행 파일 옆에서 찾기
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let template_path = exe_dir.join("product-template.exe");
+            if template_path.exists() && is_valid_exe(&template_path) {
+                return Some(template_path);
+            }
+        }
+    }
+
+    None
+}
+
+// 개발 환경에서 빌드
+fn build_from_source(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let current_dir = env::current_dir().map_err(|e| e.to_string())?;
+
+    // 프로젝트 루트 찾기 - 여러 경로 시도
+    let mut candidates: Vec<PathBuf> = vec![
+        current_dir.clone(),
+        current_dir.join("..").canonicalize().unwrap_or_default(),
+    ];
+
+    // 실행 파일 위치 기준
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            candidates.push(exe_dir.to_path_buf());
+            if let Some(parent) = exe_dir.parent() {
+                candidates.push(parent.to_path_buf());
+                // target/debug 에서 실행될 경우: target/debug -> target -> src-tauri -> project_root
+                if let Some(grandparent) = parent.parent() {
+                    candidates.push(grandparent.to_path_buf());
+                    if let Some(greatgrandparent) = grandparent.parent() {
+                        candidates.push(greatgrandparent.to_path_buf());
+                    }
+                }
+            }
+        }
+    }
+
+    // src-tauri와 package.json이 있는 프로젝트 루트 찾기
+    let project_root = candidates.iter()
+        .find(|p| p.join("src-tauri").exists() && p.join("package.json").exists())
+        .cloned()
+        .ok_or_else(|| {
+            let tried = candidates.iter()
+                .map(|p| format!("  - {}", p.display()))
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!("개발 환경을 찾을 수 없습니다.\n\n시도한 경로:\n{}", tried)
+        })?;
+
+    let _ = app.emit("build-progress", "프로젝트 빌드 중... (몇 분 소요될 수 있습니다)");
+
+    use std::process::Command;
+    let build_output = Command::new("cmd")
+        .args(&["/C", "npm", "run", "tauri:build:product"])
+        .current_dir(&project_root)
+        .output()
+        .map_err(|e| format!("빌드 명령 실행 실패: {}", e))?;
+
+    if !build_output.status.success() {
+        let stderr = String::from_utf8_lossy(&build_output.stderr);
+        let stdout = String::from_utf8_lossy(&build_output.stdout);
+        return Err(format!("빌드 실패:\n{}\n{}", stdout, stderr));
+    }
+
+    let target_dir = project_root.join("src-tauri").join("target").join("release");
+    let built_exe = target_dir.join("app.exe");
+
+    if !built_exe.exists() {
+        return Err(format!("빌드된 실행 파일을 찾을 수 없습니다: {}", built_exe.display()));
+    }
+
+    Ok(built_exe)
+}
+
 // V2: 바이너리 미디어를 exe에 직접 append하는 새 빌드 함수
 #[tauri::command]
 async fn build_standalone_executable_v2(
@@ -563,46 +659,18 @@ async fn build_standalone_executable_v2(
         }
     }
 
-    // Tauri 빌드 실행
-    let _ = app.emit("build-progress", "프로젝트 빌드 중... (몇 분 소요될 수 있습니다)");
-
-    let current_dir = env::current_dir().map_err(|e| e.to_string())?;
-    let project_root = if current_dir.join("src-tauri").exists() {
-        current_dir.clone()
+    // 1. 먼저 번들된 템플릿 exe 찾기
+    // 2. 없으면 개발 환경에서 빌드
+    let source_exe = if let Some(template_path) = find_bundled_template(&app) {
+        let _ = app.emit("build-progress", "템플릿 실행 파일 사용 중...");
+        template_path
     } else {
-        current_dir.parent()
-            .ok_or_else(|| "프로젝트 루트를 찾을 수 없습니다.".to_string())?
-            .to_path_buf()
+        let _ = app.emit("build-progress", "개발 환경에서 빌드 중...");
+        build_from_source(&app)?
     };
 
-    use std::process::Command;
-    let build_output = Command::new("cmd")
-        .args(&["/C", "npm", "run", "tauri:build:product"])
-        .current_dir(&project_root)
-        .output()
-        .map_err(|e| format!("빌드 명령 실행 실패: {}", e))?;
-
-    if !build_output.status.success() {
-        let stderr = String::from_utf8_lossy(&build_output.stderr);
-        let stdout = String::from_utf8_lossy(&build_output.stdout);
-        return Err(format!("빌드 실패:\n{}\n{}", stdout, stderr));
-    }
-
-    // 빌드된 실행 파일 찾기
-    let target_dir = project_root.join("src-tauri").join("target").join("release");
-    let built_exe = target_dir.join("app.exe");
-
-    if !built_exe.exists() {
-        return Err(format!(
-            "빌드된 실행 파일을 찾을 수 없습니다: {}",
-            built_exe.display()
-        ));
-    }
-
-    let _ = app.emit("build-progress", "빌드된 실행 파일 복사 중...");
-
-    // 빌드된 exe 복사
-    fs::copy(&built_exe, &output_path).map_err(|e| e.to_string())?;
+    // 템플릿 exe 복사
+    fs::copy(&source_exe, &output_path).map_err(|e| e.to_string())?;
 
     // 커스텀 아이콘 적용
     if let Some(ico_path) = &custom_icon_path {
@@ -686,8 +754,6 @@ fn append_binary_data_v2(
 
     file.write_all(project_bytes)
         .map_err(|e| format!("프로젝트 데이터 쓰기 실패: {}", e))?;
-
-    current_offset += manifest.project_json_size;
 
     // 3. manifest JSON append
     let manifest_json = serde_json::to_string(&manifest)

@@ -241,6 +241,10 @@ export async function buildStandaloneExecutable(
     }
   } catch (error) {
     console.error('빌드 실패:', error)
+    // Tauri에서 오는 에러는 문자열일 수 있음
+    if (typeof error === 'string') {
+      throw new Error(error)
+    }
     throw error
   }
 }

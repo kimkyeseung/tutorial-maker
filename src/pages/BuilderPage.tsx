@@ -248,8 +248,12 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview }) => {
     } catch (error) {
       console.error('Build failed:', error)
       setIsBuilding(false)
+      // Tauri에서 오는 에러는 문자열일 수 있음
+      const errorMessage = typeof error === 'string'
+        ? error
+        : (error as Error)?.message || JSON.stringify(error) || '알 수 없는 오류'
       alert(
-        '❌ 프로젝트 빌드에 실패했습니다.\n\n오류: ' + (error as Error).message
+        '❌ 프로젝트 빌드에 실패했습니다.\n\n오류: ' + errorMessage
       )
     } finally {
       setBuildProgress(null)
