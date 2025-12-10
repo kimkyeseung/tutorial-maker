@@ -29,9 +29,29 @@ const ProductPage: React.FC<ProductPageProps> = ({ projectId }) => {
   const [showEntryPage, setShowEntryPage] = useState(true)
   const [resumePlaybackSignal, setResumePlaybackSignal] = useState(0)
 
+  // 전체화면 토글 함수
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen()
+      } else {
+        await document.exitFullscreen()
+      }
+    } catch (err) {
+      console.error('전체화면 전환 실패:', err)
+    }
+  }
+
   // 키보드 이벤트 처리
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
+      // Meta+1 (Mac) 또는 Ctrl+1 (Windows)로 전체화면 토글
+      if ((e.metaKey || e.ctrlKey) && e.key === '1') {
+        e.preventDefault()
+        toggleFullscreen()
+        return
+      }
+
       if (!project) return
 
       // 종료 키 확인
