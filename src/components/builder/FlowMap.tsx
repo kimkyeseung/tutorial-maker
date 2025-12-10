@@ -490,9 +490,9 @@ const FlowMap: React.FC<FlowMapProps> = ({ pages, onSelectPage, loopAtEnd }) => 
                         ? 'bg-orange-500 text-white'
                         : 'bg-blue-500 text-white'
                     }`}
-                    title={page.playType === 'loop' ? '반복 재생' : '1회 재생'}
+                    title={page.playType === 'loop' ? '반복 재생' : `${page.playCount || 1}회 재생`}
                   >
-                    {page.playType === 'loop' ? '반복' : '1회'}
+                    {page.playType === 'loop' ? '반복' : `${page.playCount || 1}회`}
                   </div>
 
                   {/* 인터랙션 아이콘들 */}

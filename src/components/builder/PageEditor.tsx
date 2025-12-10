@@ -94,12 +94,45 @@ const PageEditor: React.FC<PageEditorProps> = ({
                 <input
                   type='radio'
                   checked={page.playType === 'single'}
-                  onChange={() => onUpdate({ playType: 'single' })}
+                  onChange={() => onUpdate({ playType: 'single', playCount: page.playCount || 1 })}
                   className='mr-2'
                 />
-                <span className='text-sm'>단일 재생 (끝나면 자동 이동)</span>
+                <span className='text-sm'>반복 후 자동 이동</span>
               </label>
             </div>
+
+            {/* 재생 횟수 (single 모드일 때만 표시) */}
+            {page.playType === 'single' && (
+              <div className='mt-3 rounded-lg bg-gray-50 p-3'>
+                <label className='mb-2 block text-sm font-medium text-gray-700'>
+                  재생 횟수: {page.playCount || 1}회
+                </label>
+                <div className='flex items-center gap-3'>
+                  <input
+                    type='range'
+                    min='1'
+                    max='20'
+                    value={page.playCount || 1}
+                    onChange={(e) => onUpdate({ playCount: parseInt(e.target.value) })}
+                    className='h-2 flex-1 cursor-pointer appearance-none rounded-lg bg-gray-200'
+                  />
+                  <input
+                    type='number'
+                    min='1'
+                    max='20'
+                    value={page.playCount || 1}
+                    onChange={(e) => {
+                      const value = Math.min(20, Math.max(1, parseInt(e.target.value) || 1))
+                      onUpdate({ playCount: value })
+                    }}
+                    className='w-16 rounded border border-gray-300 px-2 py-1 text-center text-sm'
+                  />
+                </div>
+                <p className='mt-1 text-xs text-gray-500'>
+                  영상이 {page.playCount || 1}회 재생된 후 다음 페이지로 이동합니다
+                </p>
+              </div>
+            )}
           </div>
 
           {/* 미디어 미리보기 */}

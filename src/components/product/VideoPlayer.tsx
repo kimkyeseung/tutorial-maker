@@ -27,12 +27,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
   const [hasEnded, setHasEnded] = useState(false)
+  const [currentPlayCount, setCurrentPlayCount] = useState(0) // 현재 재생 횟수
 
   // 활성 상태가 되면 비디오 재생, 비활성화되면 일시정지
   useEffect(() => {
     if (page.mediaType === 'video' && videoRef.current && mediaUrl) {
       if (isActive) {
         setHasEnded(false)
+        setCurrentPlayCount(0) // 재생 횟수 초기화
         videoRef.current.currentTime = 0
         videoRef.current.play().catch((err) => {
           console.error('Failed to play video:', err)
@@ -70,9 +72,23 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setHasEnded(true)
 
     if (page.playType === 'single') {
-      onVideoEnd()
+      const targetCount = page.playCount || 1
+      const newCount = currentPlayCount + 1
+
+      if (newCount >= targetCount) {
+        // 목표 재생 횟수에 도달하면 다음 페이지로 이동
+        onVideoEnd()
+      } else {
+        // 아직 재생 횟수가 남았으면 다시 재생
+        setCurrentPlayCount(newCount)
+        setHasEnded(false)
+        if (videoRef.current) {
+          videoRef.current.currentTime = 0
+          videoRef.current.play()
+        }
+      }
     } else {
-      // loop 모드: 자동 재생
+      // loop 모드: 무한 반복 재생
       if (videoRef.current) {
         videoRef.current.currentTime = 0
         videoRef.current.play()

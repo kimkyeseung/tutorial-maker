@@ -27,6 +27,7 @@ export interface Page {
   mediaType: 'video' | 'image'
   mediaId: string // IndexedDB Blob ID
   playType: 'loop' | 'single'
+  playCount?: number // single 모드에서 재생 횟수 (1~20, 기본값: 1)
   buttons: PageButton[]
   touchAreas: TouchArea[]
 }

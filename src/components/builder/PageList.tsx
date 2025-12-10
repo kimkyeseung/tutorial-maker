@@ -186,7 +186,7 @@ const PageList: React.FC<PageListProps> = ({
                             : 'bg-blue-500 text-white'
                         }`}
                       >
-                        {page.playType === 'loop' ? '반복' : '1회'}
+                        {page.playType === 'loop' ? '반복' : `${page.playCount || 1}회`}
                       </div>
                       <span>페이지 {index + 1}</span>
                       {validation.isValid ? (
