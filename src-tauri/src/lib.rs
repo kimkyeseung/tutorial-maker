@@ -883,7 +883,7 @@ fn get_media_manifest() -> Result<String, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  tauri::Builder::default()
+  let mut builder = tauri::Builder::default()
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_shell::init())
     .plugin(tauri_plugin_fs::init())
@@ -897,7 +897,14 @@ pub fn run() {
       }
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![build_project, get_temp_path, build_standalone_executable, build_standalone_executable_v2, read_project_file, read_project_file_v2, get_media_path, read_media_file, read_embedded_media, get_media_manifest])
+    .invoke_handler(tauri::generate_handler![build_project, get_temp_path, build_standalone_executable, build_standalone_executable_v2, read_project_file, read_project_file_v2, get_media_path, read_media_file, read_embedded_media, get_media_manifest]);
+
+  #[cfg(debug_assertions)]
+  {
+    builder = builder.plugin(tauri_plugin_mcp_bridge::init());
+  }
+
+  builder
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
