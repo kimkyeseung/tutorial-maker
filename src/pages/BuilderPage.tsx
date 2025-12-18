@@ -7,26 +7,23 @@ import ConfirmDialog from '../components/common/ConfirmDialog'
 import type { Project, Page } from '../types/project'
 import { getAllProjects, saveProject, deleteProject, getAppIcon, createBlobURL } from '../utils/mediaStorage'
 import { validateAllPages } from '../utils/pageValidation'
-import {
-  buildStandaloneExecutable,
-  type BuildProgress,
-} from '../utils/projectBuilder'
-import { exportProject, importProjectFromZip } from '../utils/projectExporter'
+import { exportAsTutorial, exportProject, importProjectFromZip } from '../utils/projectExporter'
 
 type View = 'list' | 'settings' | 'pages'
 type PagesViewMode = 'list' | 'flowmap'
 
 interface BuilderPageProps {
   onPreview?: (projectId: string) => void
+  onBackToModeSelection?: () => void
 }
 
-const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview }) => {
+const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelection }) => {
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [currentView, setCurrentView] = useState<View>('list')
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
   const [isBuilding, setIsBuilding] = useState(false)
-  const [buildProgress, setBuildProgress] = useState<BuildProgress | null>(null)
   const [pagesViewMode, setPagesViewMode] = useState<PagesViewMode>('list')
   const [projectIcons, setProjectIcons] = useState<Record<string, string>>({})
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -148,35 +145,50 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview }) => {
     setDeleteConfirm({ isOpen: false, projectId: '', projectName: '' })
   }
 
-  const handleExportProject = () => {
-    if (!selectedProject) return
-    setExportConfirm(true)
-  }
-
-  const confirmExportProject = async () => {
+  const confirmExportAsTutorial = async () => {
     if (!selectedProject) return
     setExportConfirm(false)
+    setIsExporting(true)
 
     try {
+      // 페이지 유효성 검사
+      if (selectedProject.pages.length === 0) {
+        alert('❌ 내보낼 수 없습니다.\n\n페이지가 없습니다. 최소 1개 이상의 페이지를 추가해주세요.')
+        setIsExporting(false)
+        return
+      }
+
+      const validation = validateAllPages(selectedProject.pages)
+      if (!validation.isValid) {
+        const errorMessages = validation.invalidPages
+          .map(({ pageIndex, errors }) => `페이지 ${pageIndex + 1}: ${errors.join(', ')}`)
+          .join('\n')
+        alert(`❌ 내보낼 수 없습니다.\n\n다음 페이지에 문제가 있습니다:\n${errorMessages}`)
+        setIsExporting(false)
+        return
+      }
+
       // 프로젝트 저장 먼저 수행
       await saveProject(selectedProject)
 
-      // ZIP 파일로 내보내기 (자동 다운로드)
-      const success = await exportProject(selectedProject)
+      // .tutorial 파일로 내보내기 (자동 다운로드)
+      const success = await exportAsTutorial(selectedProject)
 
       if (success) {
         alert(
-          '✅ 프로젝트가 성공적으로 내보내졌습니다!\n\nZIP 파일이 다운로드 폴더에 저장되었습니다.'
+          '✅ 튜토리얼 파일이 성공적으로 내보내졌습니다!\n\n.tutorial 파일이 다운로드 폴더에 저장되었습니다.'
         )
       } else {
-        alert('❌ 프로젝트 내보내기에 실패했습니다.')
+        alert('❌ 내보내기에 실패했습니다.')
       }
     } catch (error) {
       console.error('Export failed:', error)
       alert(
-        '❌ 프로젝트 내보내기에 실패했습니다.\n\n오류: ' +
+        '❌ 내보내기에 실패했습니다.\n\n오류: ' +
           (error as Error).message
       )
+    } finally {
+      setIsExporting(false)
     }
   }
 
@@ -203,60 +215,89 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview }) => {
     setCurrentView('pages')
   }
 
-  const handleBuild = async () => {
+  // ZIP으로 내보내기
+  const handleExportProject = async () => {
     if (!selectedProject) return
-
-    // 페이지가 없는 경우 체크
-    if (selectedProject.pages.length === 0) {
-      alert('❌ 빌드할 수 없습니다.\n\n페이지가 없습니다. 최소 1개 이상의 페이지를 추가해주세요.')
-      return
-    }
-
-    // 페이지 유효성 검사
-    const validation = validateAllPages(selectedProject.pages)
-    if (!validation.isValid) {
-      const errorMessages = validation.invalidPages
-        .map(({ pageIndex, errors }) => `페이지 ${pageIndex + 1}: ${errors.join(', ')}`)
-        .join('\n')
-
-      alert(`❌ 빌드할 수 없습니다.\n\n다음 페이지에 문제가 있습니다:\n${errorMessages}`)
-      return
-    }
-
-    // 프로젝트 저장 먼저 수행
-    await saveProject(selectedProject)
+    setIsExporting(true)
 
     try {
-      setIsBuilding(true)
-      setBuildProgress({ message: '빌드를 시작합니다...', percent: 0 })
+      // 페이지 유효성 검사
+      if (selectedProject.pages.length === 0) {
+        alert('❌ 내보낼 수 없습니다.\n\n페이지가 없습니다. 최소 1개 이상의 페이지를 추가해주세요.')
+        setIsExporting(false)
+        return
+      }
 
-      const success = await buildStandaloneExecutable(
-        selectedProject,
-        (progress) => {
-          setBuildProgress(progress)
-        }
-      )
+      const validation = validateAllPages(selectedProject.pages)
+      if (!validation.isValid) {
+        const errorMessages = validation.invalidPages
+          .map(({ pageIndex, errors }) => `페이지 ${pageIndex + 1}: ${errors.join(', ')}`)
+          .join('\n')
+        alert(`❌ 내보낼 수 없습니다.\n\n다음 페이지에 문제가 있습니다:\n${errorMessages}`)
+        setIsExporting(false)
+        return
+      }
 
-      setIsBuilding(false)
+      // 프로젝트 저장 먼저 수행
+      await saveProject(selectedProject)
+
+      // ZIP 파일로 내보내기
+      const success = await exportProject(selectedProject)
+
+      if (success) {
+        alert('✅ 프로젝트가 성공적으로 내보내졌습니다!')
+      } else {
+        alert('❌ 내보내기에 실패했습니다.')
+      }
+    } catch (error) {
+      console.error('Export failed:', error)
+      alert('❌ 내보내기에 실패했습니다.\n\n오류: ' + (error as Error).message)
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  // 실행 파일 빌드 (현재는 .tutorial 내보내기로 대체)
+  const handleBuild = async () => {
+    if (!selectedProject) return
+    setIsBuilding(true)
+
+    try {
+      // 페이지 유효성 검사
+      if (selectedProject.pages.length === 0) {
+        alert('❌ 빌드할 수 없습니다.\n\n페이지가 없습니다. 최소 1개 이상의 페이지를 추가해주세요.')
+        setIsBuilding(false)
+        return
+      }
+
+      const validation = validateAllPages(selectedProject.pages)
+      if (!validation.isValid) {
+        const errorMessages = validation.invalidPages
+          .map(({ pageIndex, errors }) => `페이지 ${pageIndex + 1}: ${errors.join(', ')}`)
+          .join('\n')
+        alert(`❌ 빌드할 수 없습니다.\n\n다음 페이지에 문제가 있습니다:\n${errorMessages}`)
+        setIsBuilding(false)
+        return
+      }
+
+      // 프로젝트 저장 먼저 수행
+      await saveProject(selectedProject)
+
+      // .tutorial 파일로 내보내기
+      const success = await exportAsTutorial(selectedProject)
 
       if (success) {
         alert(
-          '✅ 빌드가 완료되었습니다!\n\n' +
-            '선택한 위치에 실행 파일이 생성되었습니다.'
+          '✅ 튜토리얼 파일이 성공적으로 생성되었습니다!\n\n.tutorial 파일이 다운로드 폴더에 저장되었습니다.'
         )
+      } else {
+        alert('❌ 빌드에 실패했습니다.')
       }
     } catch (error) {
       console.error('Build failed:', error)
-      setIsBuilding(false)
-      // Tauri에서 오는 에러는 문자열일 수 있음
-      const errorMessage = typeof error === 'string'
-        ? error
-        : (error as Error)?.message || JSON.stringify(error) || '알 수 없는 오류'
-      alert(
-        '❌ 프로젝트 빌드에 실패했습니다.\n\n오류: ' + errorMessage
-      )
+      alert('❌ 빌드에 실패했습니다.\n\n오류: ' + (error as Error).message)
     } finally {
-      setBuildProgress(null)
+      setIsBuilding(false)
     }
   }
 
@@ -394,11 +435,11 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview }) => {
       {/* 내보내기 확인 다이얼로그 */}
       <ConfirmDialog
         isOpen={exportConfirm}
-        title='프로젝트 내보내기'
-        message='프로젝트를 ZIP 파일로 내보내시겠습니까?\n\n프로젝트 데이터와 모든 미디어 파일이 포함된 ZIP 파일이 자동으로 다운로드됩니다.'
+        title='튜토리얼 내보내기'
+        message='프로젝트를 .tutorial 파일로 내보내시겠습니까?\n\n프로젝트 데이터와 모든 미디어 파일이 포함됩니다.'
         confirmText='내보내기'
         cancelText='취소'
-        onConfirm={confirmExportProject}
+        onConfirm={confirmExportAsTutorial}
         onCancel={() => setExportConfirm(false)}
         variant='info'
       />
@@ -419,7 +460,18 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview }) => {
       <header className='bg-white shadow-sm'>
         <div className='mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8'>
           <div className='flex items-center justify-between'>
-            <h1 className='text-2xl font-bold text-gray-900'>Tutorial Maker</h1>
+            <div className='flex items-center gap-4'>
+              {onBackToModeSelection && (
+                <button
+                  onClick={onBackToModeSelection}
+                  className='flex items-center gap-1 text-gray-600 hover:text-gray-800'
+                  title='모드 선택으로'
+                >
+                  ← 홈
+                </button>
+              )}
+              <h1 className='text-2xl font-bold text-gray-900'>Tutorial Maker</h1>
+            </div>
             <div className='flex gap-2'>
               <button
                 onClick={handleImportProject}
@@ -438,34 +490,13 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview }) => {
         </div>
       </header>
 
-      {/* 빌드 진행 상황 모달 */}
-      {isBuilding && buildProgress && (
+      {/* 내보내기 진행 중 표시 */}
+      {isExporting && (
         <div className='fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50'>
-          <div className='mx-4 w-full max-w-md rounded-lg bg-white p-8'>
-            <h3 className='mb-4 text-xl font-bold'>프로젝트 빌드 중</h3>
-            {/* 프로그레스 바 */}
-            <div className='mb-2'>
-              <div className='h-3 w-full overflow-hidden rounded-full bg-gray-200'>
-                <div
-                  className='h-full rounded-full bg-purple-600 transition-all duration-300'
-                  style={{ width: `${buildProgress.percent ?? 0}%` }}
-                />
-              </div>
-            </div>
-            {/* 퍼센테이지 표시 */}
-            <div className='mb-3 text-right text-sm font-medium text-purple-600'>
-              {buildProgress.percent ?? 0}%
-            </div>
-            {/* 진행상황 메시지 */}
-            <p className='text-sm text-gray-600'>{buildProgress.message}</p>
-            {buildProgress.step && buildProgress.totalSteps && (
-              <p className='mt-1 text-xs text-gray-500'>
-                단계: {buildProgress.step} / {buildProgress.totalSteps}
-              </p>
-            )}
-            <p className='mt-3 text-xs text-gray-400'>
-              잠시만 기다려주세요. 빌드가 완료될 때까지 창을 닫지 마세요.
-            </p>
+          <div className='mx-4 w-full max-w-md rounded-lg bg-white p-8 text-center'>
+            <div className='mb-4 text-4xl'>📦</div>
+            <h3 className='mb-2 text-xl font-bold'>내보내는 중...</h3>
+            <p className='text-sm text-gray-600'>잠시만 기다려주세요</p>
           </div>
         </div>
       )}
