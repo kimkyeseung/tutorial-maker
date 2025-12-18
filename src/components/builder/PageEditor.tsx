@@ -5,9 +5,8 @@ import {
   createBlobURL,
   revokeBlobURL,
 } from '../../utils/mediaStorage'
-import ButtonEditor from './ButtonEditor'
+import InteractionEditor from './InteractionEditor'
 import MediaUploader from './MediaUploader'
-import TouchAreaEditor from './TouchAreaEditor'
 
 type PageEditorProps = {
   page: Page | null
@@ -190,22 +189,13 @@ const PageEditor: React.FC<PageEditorProps> = ({
         </div>
       </div>
 
-      {/* 버튼 편집기 */}
+      {/* 인터랙션 편집기 (버튼 + 터치 영역) */}
       {page.mediaId && (
-        <ButtonEditor
+        <InteractionEditor
           buttons={page.buttons}
-          onUpdate={(buttons: PageButton[]) => onUpdate({ buttons })}
-          mediaUrl={mediaPreview}
-          mediaType={page.mediaType}
-          totalPages={totalPages}
-        />
-      )}
-
-      {/* 터치 영역 편집기 */}
-      {page.mediaId && (
-        <TouchAreaEditor
           touchAreas={page.touchAreas}
-          onUpdate={(touchAreas: TouchArea[]) => onUpdate({ touchAreas })}
+          onUpdateButtons={(buttons: PageButton[]) => onUpdate({ buttons })}
+          onUpdateTouchAreas={(touchAreas: TouchArea[]) => onUpdate({ touchAreas })}
           mediaUrl={mediaPreview}
           mediaType={page.mediaType}
           totalPages={totalPages}
