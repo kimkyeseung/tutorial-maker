@@ -334,8 +334,10 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelect
   const handleAddPage = () => {
     if (!selectedProject) return
 
+    const pageNumber = selectedProject.pages.length + 1
     const newPage: Page = {
       id: crypto.randomUUID(),
+      title: `페이지 ${pageNumber}`,
       order: selectedProject.pages.length,
       mediaType: 'video',
       mediaId: '',

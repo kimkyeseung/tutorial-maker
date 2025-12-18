@@ -528,11 +528,12 @@ const InteractionEditor: React.FC<InteractionEditorProps> = ({
                 <option value=''>페이지 선택...</option>
                 {pages
                   .filter((p) => p.id !== currentPageId)
-                  .map((page, index) => {
+                  .map((page) => {
                     const pageNumber = pages.findIndex((p) => p.id === page.id) + 1
+                    const displayTitle = page.title || `페이지 ${pageNumber}`
                     return (
                       <option key={page.id} value={page.id}>
-                        페이지 {pageNumber}
+                        {pageNumber}. {displayTitle}
                       </option>
                     )
                   })}
@@ -700,11 +701,12 @@ const InteractionEditor: React.FC<InteractionEditorProps> = ({
                 <option value=''>페이지 선택...</option>
                 {pages
                   .filter((p) => p.id !== currentPageId)
-                  .map((page, index) => {
+                  .map((page) => {
                     const pageNumber = pages.findIndex((p) => p.id === page.id) + 1
+                    const displayTitle = page.title || `페이지 ${pageNumber}`
                     return (
                       <option key={page.id} value={page.id}>
-                        페이지 {pageNumber}
+                        {pageNumber}. {displayTitle}
                       </option>
                     )
                   })}

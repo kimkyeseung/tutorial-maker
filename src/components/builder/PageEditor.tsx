@@ -72,6 +72,20 @@ const PageEditor: React.FC<PageEditorProps> = ({
         <h3 className='mb-4 text-lg font-semibold'>페이지 설정</h3>
 
         <div className='space-y-4'>
+          {/* 페이지 제목 */}
+          <div>
+            <label className='mb-2 block text-sm font-medium text-gray-700'>
+              페이지 제목
+            </label>
+            <input
+              type='text'
+              value={page.title}
+              onChange={(e) => onUpdate({ title: e.target.value })}
+              placeholder='페이지 제목을 입력하세요'
+              className='w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
+            />
+          </div>
+
           {/* 재생 타입 */}
           <div>
             <label className='mb-2 block text-sm font-medium text-gray-700'>

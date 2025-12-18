@@ -23,6 +23,7 @@ export interface ProjectSettings {
 
 export interface Page {
   id: string
+  title: string // 페이지 제목 (기본값: "페이지 N")
   order: number
   mediaType: 'video' | 'image'
   mediaId: string // IndexedDB Blob ID
