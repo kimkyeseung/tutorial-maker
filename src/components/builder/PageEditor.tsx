@@ -11,13 +11,13 @@ import MediaUploader from './MediaUploader'
 type PageEditorProps = {
   page: Page | null
   onUpdate: (updates: Partial<Page>) => void
-  totalPages: number
+  pages: Page[]
 }
 
 const PageEditor: React.FC<PageEditorProps> = ({
   page,
   onUpdate,
-  totalPages,
+  pages,
 }) => {
   const [mediaPreview, setMediaPreview] = useState<string | null>(null)
   const [mediaFileName, setMediaFileName] = useState<string | null>(null)
@@ -198,7 +198,8 @@ const PageEditor: React.FC<PageEditorProps> = ({
           onUpdateTouchAreas={(touchAreas: TouchArea[]) => onUpdate({ touchAreas })}
           mediaUrl={mediaPreview}
           mediaType={page.mediaType}
-          totalPages={totalPages}
+          pages={pages}
+          currentPageId={page.id}
         />
       )}
 

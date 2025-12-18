@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import type { PageButton, TouchArea } from '../../types/project'
+import type { Page, PageButton, TouchArea } from '../../types/project'
 import {
   saveButtonImage,
   getButtonImage,
@@ -13,7 +13,8 @@ type InteractionEditorProps = {
   onUpdateTouchAreas: (touchAreas: TouchArea[]) => void
   mediaUrl: string | null
   mediaType: 'video' | 'image'
-  totalPages: number
+  pages: Page[]
+  currentPageId: string
 }
 
 type SelectedItem =
@@ -28,7 +29,8 @@ const InteractionEditor: React.FC<InteractionEditorProps> = ({
   onUpdateTouchAreas,
   mediaUrl,
   mediaType,
-  totalPages,
+  pages,
+  currentPageId,
 }) => {
   const [selectedItem, setSelectedItem] = useState<SelectedItem>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -511,25 +513,30 @@ const InteractionEditor: React.FC<InteractionEditorProps> = ({
               <label className='mb-1 block text-sm font-medium text-gray-700'>
                 이동할 페이지
               </label>
-              <input
-                type='number'
-                value={
-                  selectedButton.action.targetPageId
-                    ? parseInt(selectedButton.action.targetPageId) + 1
-                    : 1
-                }
+              <select
+                value={selectedButton.action.targetPageId || ''}
                 onChange={(e) =>
                   handleButtonUpdate(selectedButton.id, {
                     action: {
                       type: 'goto',
-                      targetPageId: (parseInt(e.target.value) - 1).toString(),
+                      targetPageId: e.target.value,
                     },
                   })
                 }
                 className='w-full rounded border border-gray-300 px-3 py-2 text-sm'
-                min='1'
-                max={totalPages}
-              />
+              >
+                <option value=''>페이지 선택...</option>
+                {pages
+                  .filter((p) => p.id !== currentPageId)
+                  .map((page, index) => {
+                    const pageNumber = pages.findIndex((p) => p.id === page.id) + 1
+                    return (
+                      <option key={page.id} value={page.id}>
+                        페이지 {pageNumber}
+                      </option>
+                    )
+                  })}
+              </select>
             </div>
           )}
 
@@ -678,25 +685,30 @@ const InteractionEditor: React.FC<InteractionEditorProps> = ({
               <label className='mb-1 block text-sm font-medium text-gray-700'>
                 이동할 페이지
               </label>
-              <input
-                type='number'
-                value={
-                  selectedTouchArea.action.targetPageId
-                    ? parseInt(selectedTouchArea.action.targetPageId) + 1
-                    : 1
-                }
+              <select
+                value={selectedTouchArea.action.targetPageId || ''}
                 onChange={(e) =>
                   handleTouchAreaUpdate(selectedTouchArea.id, {
                     action: {
                       type: 'goto',
-                      targetPageId: (parseInt(e.target.value) - 1).toString(),
+                      targetPageId: e.target.value,
                     },
                   })
                 }
                 className='w-full rounded border border-gray-300 px-3 py-2 text-sm'
-                min='1'
-                max={totalPages}
-              />
+              >
+                <option value=''>페이지 선택...</option>
+                {pages
+                  .filter((p) => p.id !== currentPageId)
+                  .map((page, index) => {
+                    const pageNumber = pages.findIndex((p) => p.id === page.id) + 1
+                    return (
+                      <option key={page.id} value={page.id}>
+                        페이지 {pageNumber}
+                      </option>
+                    )
+                  })}
+              </select>
             </div>
           )}
 

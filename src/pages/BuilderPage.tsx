@@ -729,7 +729,7 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelect
                   <PageEditor
                     page={selectedPage}
                     onUpdate={handlePageUpdate}
-                    totalPages={selectedProject.pages.length}
+                    pages={selectedProject.pages}
                   />
                 </div>
               </div>
