@@ -5,6 +5,9 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen",
+    "cli:default",
     "mcp-bridge:default",
     "dialog:allow-open",
     "dialog:allow-save",

@@ -530,7 +530,7 @@ fn find_bundled_template(app: &tauri::AppHandle) -> Option<PathBuf> {
         }
     };
 
-    // Tauri 리소스 경로에서 찾기
+    // 1. Tauri 리소스 경로에서 찾기 (번들된 앱)
     if let Ok(resource_path) = app.path().resource_dir() {
         let template_path = resource_path.join("product-template.exe");
         if template_path.exists() && is_valid_exe(&template_path) {
@@ -538,12 +538,49 @@ fn find_bundled_template(app: &tauri::AppHandle) -> Option<PathBuf> {
         }
     }
 
-    // 실행 파일 옆에서 찾기
+    // 2. 실행 파일 옆에서 찾기
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
             let template_path = exe_dir.join("product-template.exe");
             if template_path.exists() && is_valid_exe(&template_path) {
                 return Some(template_path);
+            }
+
+            // resources 하위 폴더에서 찾기
+            let template_path = exe_dir.join("resources").join("product-template.exe");
+            if template_path.exists() && is_valid_exe(&template_path) {
+                return Some(template_path);
+            }
+        }
+    }
+
+    // 3. 개발 모드: 프로젝트 src-tauri/resources에서 찾기
+    if let Ok(current_dir) = env::current_dir() {
+        // 프로젝트 루트에서 실행된 경우
+        let template_path = current_dir.join("src-tauri").join("resources").join("product-template.exe");
+        if template_path.exists() && is_valid_exe(&template_path) {
+            return Some(template_path);
+        }
+
+        // src-tauri에서 실행된 경우
+        let template_path = current_dir.join("resources").join("product-template.exe");
+        if template_path.exists() && is_valid_exe(&template_path) {
+            return Some(template_path);
+        }
+    }
+
+    // 4. 실행 파일 기준 상위 폴더 탐색 (target/debug 또는 target/release에서 실행된 경우)
+    if let Ok(exe_path) = std::env::current_exe() {
+        let mut current = exe_path.as_path();
+        for _ in 0..5 {
+            if let Some(parent) = current.parent() {
+                let template_path = parent.join("src-tauri").join("resources").join("product-template.exe");
+                if template_path.exists() && is_valid_exe(&template_path) {
+                    return Some(template_path);
+                }
+                current = parent;
+            } else {
+                break;
             }
         }
     }
@@ -662,10 +699,11 @@ async fn build_standalone_executable_v2(
     // 1. 먼저 번들된 템플릿 exe 찾기
     // 2. 없으면 개발 환경에서 빌드
     let source_exe = if let Some(template_path) = find_bundled_template(&app) {
-        let _ = app.emit("build-progress", "템플릿 실행 파일 사용 중...");
+        let msg = format!("템플릿 실행 파일 발견: {}", template_path.display());
+        let _ = app.emit("build-progress", &msg);
         template_path
     } else {
-        let _ = app.emit("build-progress", "개발 환경에서 빌드 중...");
+        let _ = app.emit("build-progress", "템플릿을 찾을 수 없어 개발 환경에서 빌드합니다...");
         build_from_source(&app)?
     };
 
@@ -887,6 +925,7 @@ pub fn run() {
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_shell::init())
     .plugin(tauri_plugin_fs::init())
+    .plugin(tauri_plugin_cli::init())
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

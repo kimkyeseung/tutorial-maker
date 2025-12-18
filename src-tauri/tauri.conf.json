@@ -34,6 +34,26 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["resources/*"]
+    "resources": ["resources/*"],
+    "fileAssociations": [
+      {
+        "ext": ["tutorial"],
+        "name": "Tutorial File",
+        "description": "Tutorial Maker Project File",
+        "role": "Viewer",
+        "mimeType": "application/x-tutorial"
+      }
+    ]
+  },
+  "plugins": {
+    "cli": {
+      "args": [
+        {
+          "name": "file",
+          "index": 1,
+          "takesValue": true
+        }
+      ]
+    }
   }
 }
