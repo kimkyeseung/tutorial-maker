@@ -1,4 +1,5 @@
 import React from 'react'
+import Footer from '../components/common/Footer'
 
 interface ModeSelectionPageProps {
   onSelectMode: (mode: 'maker' | 'viewer') => void
@@ -44,6 +45,8 @@ const ModeSelectionPage: React.FC<ModeSelectionPageProps> = ({ onSelectMode }) =
         <p className="mt-8 text-xs text-gray-400">
           Tutorial Maker v0.1.0
         </p>
+
+        <Footer className="mt-4" />
       </div>
     </div>
   )

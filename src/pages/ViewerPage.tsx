@@ -2,6 +2,7 @@ import React, { useCallback } from 'react'
 import { ProductPageContent } from './ProductPage'
 import LoadingScreen from '../components/product/LoadingScreen'
 import ErrorScreen from '../components/product/ErrorScreen'
+import Footer from '../components/common/Footer'
 import { useTutorialViewer } from '../hooks/useTutorialViewer'
 import { getRecentFiles, addRecentFile, removeRecentFile, type RecentFile } from '../utils/recentFiles'
 
@@ -108,6 +109,8 @@ const ViewerPage: React.FC<ViewerPageProps> = ({ filePath, onFileSelect }) => {
         <p className="mt-12 text-xs text-gray-500">
           .tutorial 또는 .zip 파일을 열 수 있습니다
         </p>
+
+        <Footer className="mt-8" />
       </div>
     )
   }
