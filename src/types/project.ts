@@ -107,3 +107,21 @@ export interface BinaryBuildRequest {
   mediaFiles: MediaBuildInfo[]
   appIconPath?: string
 }
+
+// .tutorial 파일 포맷용 타입
+export interface TutorialManifest {
+  version: string // "1.0.0"
+  formatVersion: number // 1
+  createdAt: number
+  createdWith: string // "Tutorial Maker v0.1.0"
+  projectName: string
+}
+
+// 뷰어에서 로드된 튜토리얼 데이터
+export interface LoadedTutorial {
+  manifest: TutorialManifest
+  project: Project
+  mediaBlobs: Record<string, Blob> // mediaId -> Blob
+  buttonBlobs: Record<string, Blob> // buttonId -> Blob
+  iconBlob?: Blob
+}
