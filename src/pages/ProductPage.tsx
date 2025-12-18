@@ -7,14 +7,22 @@ import ErrorScreen from '../components/product/ErrorScreen'
 import ConfirmDialog from '../components/common/ConfirmDialog'
 import { useProductProject } from '../hooks/useProductProject'
 import { usePageNavigation } from '../hooks/usePageNavigation'
+import type { Project } from '../types/project'
 
-interface ProductPageProps {
-  projectId?: string // 개발 모드 미리보기에서 특정 프로젝트 ID 전달
+// 프레젠테이션 전용 컴포넌트 (외부에서 데이터 주입)
+export interface ProductPageContentProps {
+  project: Project
+  mediaUrls: Record<string, string>
+  buttonImageUrls: Record<string, string>
+  onExit?: () => void // 종료 시 콜백 (옵션)
 }
 
-const ProductPage: React.FC<ProductPageProps> = ({ projectId }) => {
-  const { project, mediaUrls, buttonImageUrls, isLoading } =
-    useProductProject(projectId)
+export const ProductPageContent: React.FC<ProductPageContentProps> = ({
+  project,
+  mediaUrls,
+  buttonImageUrls,
+  onExit,
+}) => {
   const {
     currentPageIndex,
     currentPage,
@@ -32,13 +40,31 @@ const ProductPage: React.FC<ProductPageProps> = ({ projectId }) => {
   // 전체화면 토글 함수
   const toggleFullscreen = async () => {
     try {
-      if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen()
+      // Tauri 환경에서는 Tauri window API 사용
+      if ('__TAURI_INTERNALS__' in window) {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window')
+        const appWindow = getCurrentWindow()
+        const isFullscreen = await appWindow.isFullscreen()
+        await appWindow.setFullscreen(!isFullscreen)
       } else {
-        await document.exitFullscreen()
+        // 웹 환경에서는 기존 방식 사용
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen()
+        } else {
+          await document.exitFullscreen()
+        }
       }
     } catch (err) {
       console.error('전체화면 전환 실패:', err)
+    }
+  }
+
+  // 종료 처리
+  const handleExit = () => {
+    if (onExit) {
+      onExit()
+    } else {
+      window.close()
     }
   }
 
@@ -51,8 +77,6 @@ const ProductPage: React.FC<ProductPageProps> = ({ projectId }) => {
         toggleFullscreen()
         return
       }
-
-      if (!project) return
 
       // 종료 키 확인
       if (project.settings.exitKey && e.key === project.settings.exitKey) {
@@ -76,14 +100,12 @@ const ProductPage: React.FC<ProductPageProps> = ({ projectId }) => {
 
   const handleVideoEnd = () => {
     // 단일 재생 모드일 때만 자동으로 다음 페이지로
-    if (project?.pages[currentPageIndex]?.playType === 'single') {
+    if (project.pages[currentPageIndex]?.playType === 'single') {
       goToNextPage()
     }
   }
 
   const handleButtonClick = (buttonId: string) => {
-    if (!project) return
-
     const page = project.pages[currentPageIndex]
     const button = page.buttons.find((b) => b.id === buttonId)
 
@@ -101,8 +123,6 @@ const ProductPage: React.FC<ProductPageProps> = ({ projectId }) => {
   }
 
   const handleTouchAreaClick = (touchAreaId: string) => {
-    if (!project) return
-
     const page = project.pages[currentPageIndex]
     const touchArea = page.touchAreas.find((t) => t.id === touchAreaId)
 
@@ -125,21 +145,6 @@ const ProductPage: React.FC<ProductPageProps> = ({ projectId }) => {
     setResumePlaybackSignal((prev) => prev + 1)
   }
 
-  // 로딩 중
-  if (isLoading) {
-    return <LoadingScreen />
-  }
-
-  // 프로젝트 없음
-  if (!project) {
-    return (
-      <ErrorScreen
-        title='프로젝트를 찾을 수 없습니다'
-        message='빌더 페이지에서 프로젝트를 먼저 만들어주세요'
-      />
-    )
-  }
-
   // 페이지 없음
   if (project.pages.length === 0) {
     return (
@@ -159,7 +164,7 @@ const ProductPage: React.FC<ProductPageProps> = ({ projectId }) => {
         message='앱을 종료하시겠습니까?'
         confirmText='종료'
         cancelText='취소'
-        onConfirm={() => window.close()}
+        onConfirm={handleExit}
         onCancel={() => setExitConfirm(false)}
         variant='warning'
       />
@@ -223,6 +228,39 @@ const ProductPage: React.FC<ProductPageProps> = ({ projectId }) => {
         />
       )}
     </div>
+  )
+}
+
+// 기존 ProductPage (useProductProject 훅 사용)
+interface ProductPageProps {
+  projectId?: string // 개발 모드 미리보기에서 특정 프로젝트 ID 전달
+}
+
+const ProductPage: React.FC<ProductPageProps> = ({ projectId }) => {
+  const { project, mediaUrls, buttonImageUrls, isLoading } =
+    useProductProject(projectId)
+
+  // 로딩 중
+  if (isLoading) {
+    return <LoadingScreen />
+  }
+
+  // 프로젝트 없음
+  if (!project) {
+    return (
+      <ErrorScreen
+        title='프로젝트를 찾을 수 없습니다'
+        message='빌더 페이지에서 프로젝트를 먼저 만들어주세요'
+      />
+    )
+  }
+
+  return (
+    <ProductPageContent
+      project={project}
+      mediaUrls={mediaUrls}
+      buttonImageUrls={buttonImageUrls}
+    />
   )
 }
 

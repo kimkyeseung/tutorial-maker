@@ -1,5 +1,5 @@
 import JSZip from 'jszip'
-import type { Project } from '../types/project'
+import type { Project, TutorialManifest } from '../types/project'
 import {
   getMediaFile,
   getButtonImage,
@@ -10,8 +10,21 @@ import {
   saveAppIcon,
 } from './mediaStorage'
 
+// manifest.json 생성
+const createManifest = (project: Project): TutorialManifest => ({
+  version: '1.0.0',
+  formatVersion: 1,
+  createdAt: Date.now(),
+  createdWith: 'Tutorial Maker v0.1.0',
+  projectName: project.name,
+})
+
 export const exportProjectAsZip = async (project: Project): Promise<Blob> => {
   const zip = new JSZip()
+
+  // manifest.json 추가
+  const manifest = createManifest(project)
+  zip.file('manifest.json', JSON.stringify(manifest, null, 2))
 
   // 프로젝트 데이터 (JSON)
   const projectData = {
@@ -68,25 +81,71 @@ export const exportProjectAsZip = async (project: Project): Promise<Blob> => {
   return await zip.generateAsync({ type: 'blob' })
 }
 
-export const downloadZip = (blob: Blob, filename: string) => {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+export const downloadFile = async (blob: Blob, filename: string): Promise<boolean> => {
+  // Tauri 환경인지 확인
+  if ('__TAURI_INTERNALS__' in window) {
+    try {
+      const { save } = await import('@tauri-apps/plugin-dialog')
+      const { writeFile } = await import('@tauri-apps/plugin-fs')
+
+      // 저장 다이얼로그 열기
+      const filePath = await save({
+        defaultPath: filename,
+        filters: [{ name: 'Tutorial', extensions: ['tutorial'] }],
+      })
+
+      if (filePath) {
+        // Blob을 ArrayBuffer로 변환
+        const arrayBuffer = await blob.arrayBuffer()
+        const uint8Array = new Uint8Array(arrayBuffer)
+
+        // 파일 저장
+        await writeFile(filePath, uint8Array)
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('Tauri file save failed:', error)
+      return false
+    }
+  } else {
+    // 웹 환경에서는 기존 방식 사용
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    return true
+  }
 }
+
+// 하위 호환성을 위해 유지
+export const downloadZip = downloadFile
 
 export const exportProject = async (project: Project) => {
   try {
     const zipBlob = await exportProjectAsZip(project)
     const filename = `${project.name.replace(/[^a-z0-9]/gi, '_')}_${Date.now()}.zip`
-    downloadZip(zipBlob, filename)
-    return true
+    return await downloadFile(zipBlob, filename)
   } catch (error) {
     console.error('Failed to export project:', error)
+    return false
+  }
+}
+
+// .tutorial 파일로 내보내기
+export const exportAsTutorial = async (project: Project): Promise<boolean> => {
+  try {
+    const blob = await exportProjectAsZip(project)
+    // 파일명에서 특수문자 제거하고 한글은 유지
+    const safeName = project.name.replace(/[<>:"/\\|?*]/g, '_')
+    const filename = `${safeName}프로젝트.tutorial`
+    return await downloadFile(blob, filename)
+  } catch (error) {
+    console.error('Failed to export as tutorial:', error)
     return false
   }
 }
