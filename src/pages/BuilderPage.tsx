@@ -436,7 +436,7 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelect
       <ConfirmDialog
         isOpen={exportConfirm}
         title='튜토리얼 내보내기'
-        message='프로젝트를 .tutorial 파일로 내보내시겠습니까?\n\n프로젝트 데이터와 모든 미디어 파일이 포함됩니다.'
+        message={"프로젝트를 .tutorial 파일로 내보내시겠습니까?\n\n프로젝트 데이터와 모든 미디어 파일이 포함됩니다."}
         confirmText='내보내기'
         cancelText='취소'
         onConfirm={confirmExportAsTutorial}
@@ -448,7 +448,7 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelect
       <ConfirmDialog
         isOpen={unsavedChangesConfirm}
         title='저장되지 않은 변경사항'
-        message='저장되지 않은 변경사항이 있습니다.\n저장하시겠습니까?'
+        message={"저장되지 않은 변경사항이 있습니다.\n저장하시겠습니까?"}
         confirmText='저장'
         cancelText='저장 안 함'
         onConfirm={confirmSaveAndGoToPages}
