@@ -8,9 +8,16 @@ import type { Project, Page } from '../types/project'
 import { getAllProjects, saveProject, deleteProject, getAppIcon, createBlobURL } from '../utils/mediaStorage'
 import { validateAllPages } from '../utils/pageValidation'
 import { exportAsTutorial, exportProject, importProjectFromZip } from '../utils/projectExporter'
-import { buildStandaloneExecutable, BuildProgress, CompressionStats } from '../utils/projectBuilder'
+import { buildStandaloneExecutable, BuildProgress, CompressionStats, BuildOptions } from '../utils/projectBuilder'
 
 type View = 'list' | 'settings' | 'pages'
+
+// 빌드 옵션 기본값
+const DEFAULT_BUILD_OPTIONS: BuildOptions = {
+  enableCompression: true,
+  compressionQuality: 'medium',
+  maxResolution: 1080,
+}
 type PagesViewMode = 'list' | 'flowmap'
 
 interface BuilderPageProps {
@@ -36,6 +43,8 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelect
   const [exportConfirm, setExportConfirm] = useState(false)
   const [unsavedChangesConfirm, setUnsavedChangesConfirm] = useState(false)
   const [buildProgress, setBuildProgress] = useState<BuildProgress | null>(null)
+  const [showBuildOptions, setShowBuildOptions] = useState(false)
+  const [buildOptions, setBuildOptions] = useState<BuildOptions>(DEFAULT_BUILD_OPTIONS)
 
   useEffect(() => {
     loadProjects()
@@ -259,32 +268,36 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelect
     }
   }
 
+  // 빌드 옵션 다이얼로그 열기
+  const handleOpenBuildOptions = () => {
+    if (!selectedProject) return
+
+    // 페이지 유효성 검사
+    if (selectedProject.pages.length === 0) {
+      alert('❌ 빌드할 수 없습니다.\n\n페이지가 없습니다. 최소 1개 이상의 페이지를 추가해주세요.')
+      return
+    }
+
+    const validation = validateAllPages(selectedProject.pages)
+    if (!validation.isValid) {
+      const errorMessages = validation.invalidPages
+        .map(({ pageIndex, errors }) => `페이지 ${pageIndex + 1}: ${errors.join(', ')}`)
+        .join('\n')
+      alert(`❌ 빌드할 수 없습니다.\n\n다음 페이지에 문제가 있습니다:\n${errorMessages}`)
+      return
+    }
+
+    setShowBuildOptions(true)
+  }
+
   // 실행 파일 빌드 (압축 포함)
   const handleBuild = async () => {
     if (!selectedProject) return
+    setShowBuildOptions(false)
     setIsBuilding(true)
     setBuildProgress({ message: '빌드 준비 중...', percent: 0 })
 
     try {
-      // 페이지 유효성 검사
-      if (selectedProject.pages.length === 0) {
-        alert('❌ 빌드할 수 없습니다.\n\n페이지가 없습니다. 최소 1개 이상의 페이지를 추가해주세요.')
-        setIsBuilding(false)
-        setBuildProgress(null)
-        return
-      }
-
-      const validation = validateAllPages(selectedProject.pages)
-      if (!validation.isValid) {
-        const errorMessages = validation.invalidPages
-          .map(({ pageIndex, errors }) => `페이지 ${pageIndex + 1}: ${errors.join(', ')}`)
-          .join('\n')
-        alert(`❌ 빌드할 수 없습니다.\n\n다음 페이지에 문제가 있습니다:\n${errorMessages}`)
-        setIsBuilding(false)
-        setBuildProgress(null)
-        return
-      }
-
       // 프로젝트 저장 먼저 수행
       await saveProject(selectedProject)
 
@@ -294,11 +307,7 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelect
         (progress) => {
           setBuildProgress(progress)
         },
-        {
-          enableCompression: true,
-          compressionQuality: 'medium',
-          maxResolution: 1080,
-        }
+        buildOptions
       )
 
       if (result.success) {
@@ -490,6 +499,111 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelect
         onCancel={skipSaveAndGoToPages}
         variant='warning'
       />
+
+      {/* 빌드 옵션 다이얼로그 */}
+      {showBuildOptions && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50'>
+          <div className='mx-4 w-full max-w-md rounded-lg bg-white p-6 shadow-xl'>
+            <h3 className='mb-4 text-xl font-bold'>빌드 옵션</h3>
+
+            {/* 압축 활성화 */}
+            <div className='mb-4'>
+              <label className='flex items-center gap-2'>
+                <input
+                  type='checkbox'
+                  checked={buildOptions.enableCompression}
+                  onChange={(e) =>
+                    setBuildOptions((prev) => ({
+                      ...prev,
+                      enableCompression: e.target.checked,
+                    }))
+                  }
+                  className='h-4 w-4 rounded border-gray-300'
+                />
+                <span className='font-medium'>영상 자동 압축</span>
+              </label>
+              <p className='mt-1 text-sm text-gray-500'>
+                대용량 영상을 자동으로 압축하여 파일 크기를 줄입니다
+              </p>
+            </div>
+
+            {/* 압축 품질 */}
+            {buildOptions.enableCompression && (
+              <>
+                <div className='mb-4'>
+                  <label className='mb-2 block font-medium'>압축 품질</label>
+                  <div className='flex gap-2'>
+                    {(['low', 'medium', 'high'] as const).map((quality) => (
+                      <button
+                        key={quality}
+                        onClick={() =>
+                          setBuildOptions((prev) => ({
+                            ...prev,
+                            compressionQuality: quality,
+                          }))
+                        }
+                        className={`flex-1 rounded-lg px-3 py-2 text-sm transition-colors ${
+                          buildOptions.compressionQuality === quality
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {quality === 'low' && '낮음 (작은 파일)'}
+                        {quality === 'medium' && '중간 (권장)'}
+                        {quality === 'high' && '높음 (큰 파일)'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 최대 해상도 */}
+                <div className='mb-6'>
+                  <label className='mb-2 block font-medium'>최대 해상도</label>
+                  <div className='flex gap-2'>
+                    {[720, 1080, 1440].map((res) => (
+                      <button
+                        key={res}
+                        onClick={() =>
+                          setBuildOptions((prev) => ({
+                            ...prev,
+                            maxResolution: res,
+                          }))
+                        }
+                        className={`flex-1 rounded-lg px-3 py-2 text-sm transition-colors ${
+                          buildOptions.maxResolution === res
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {res}p
+                      </button>
+                    ))}
+                  </div>
+                  <p className='mt-1 text-xs text-gray-500'>
+                    이 해상도를 초과하는 영상은 자동으로 축소됩니다
+                  </p>
+                </div>
+              </>
+            )}
+
+            {/* 버튼 */}
+            <div className='flex justify-end gap-2'>
+              <button
+                onClick={() => setShowBuildOptions(false)}
+                className='rounded-lg px-4 py-2 text-gray-600 hover:bg-gray-100'
+              >
+                취소
+              </button>
+              <button
+                onClick={handleBuild}
+                className='rounded-lg bg-purple-600 px-4 py-2 text-white hover:bg-purple-700'
+              >
+                빌드 시작
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 헤더 */}
       <header className='bg-white shadow-sm'>
@@ -689,7 +803,7 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelect
                   📦 ZIP으로 내보내기
                 </button>
                 <button
-                  onClick={handleBuild}
+                  onClick={handleOpenBuildOptions}
                   disabled={isBuilding}
                   className='flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50'
                 >
@@ -761,7 +875,7 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelect
                   📦 ZIP으로 내보내기
                 </button>
                 <button
-                  onClick={handleBuild}
+                  onClick={handleOpenBuildOptions}
                   disabled={isBuilding}
                   className='flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50'
                 >
