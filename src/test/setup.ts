@@ -3,7 +3,6 @@ import '@testing-library/jest-dom'
 // Mock for WebCodecs API (not available in jsdom)
 class MockVideoEncoder {
   private callback: (chunk: EncodedVideoChunk, metadata?: EncodedVideoChunkMetadata) => void
-  private errorCallback: (error: DOMException) => void
   private _state: 'unconfigured' | 'configured' | 'closed' = 'unconfigured'
 
   constructor(init: {
@@ -11,18 +10,19 @@ class MockVideoEncoder {
     error: (error: DOMException) => void
   }) {
     this.callback = init.output
-    this.errorCallback = init.error
+    // Error callback stored for potential future use
+    void init.error
   }
 
   get state() {
     return this._state
   }
 
-  configure(config: VideoEncoderConfig) {
+  configure(_config: VideoEncoderConfig) {
     this._state = 'configured'
   }
 
-  encode(frame: VideoFrame, options?: VideoEncoderEncodeOptions) {
+  encode(frame: VideoFrame, _options?: VideoEncoderEncodeOptions) {
     // Simulate encoding by creating a mock chunk
     const mockChunk = {
       type: 'key',
@@ -53,7 +53,6 @@ class MockVideoEncoder {
 
 class MockVideoDecoder {
   private callback: (frame: VideoFrame) => void
-  private errorCallback: (error: DOMException) => void
   private _state: 'unconfigured' | 'configured' | 'closed' = 'unconfigured'
 
   constructor(init: {
@@ -61,14 +60,15 @@ class MockVideoDecoder {
     error: (error: DOMException) => void
   }) {
     this.callback = init.output
-    this.errorCallback = init.error
+    // Error callback stored for potential future use
+    void init.error
   }
 
   get state() {
     return this._state
   }
 
-  configure(config: VideoDecoderConfig) {
+  configure(_config: VideoDecoderConfig) {
     this._state = 'configured'
   }
 
@@ -110,7 +110,7 @@ class MockVideoFrame {
   displayHeight: number
 
   constructor(
-    source: HTMLVideoElement | ImageBitmap,
+    _source: HTMLVideoElement | ImageBitmap,
     init?: { timestamp?: number; duration?: number }
   ) {
     this.timestamp = init?.timestamp || 0
@@ -133,7 +133,7 @@ Object.assign(globalThis, {
 
 // Mock URL.createObjectURL and URL.revokeObjectURL
 if (typeof URL.createObjectURL === 'undefined') {
-  URL.createObjectURL = (blob: Blob) => `blob:mock-${Math.random()}`
+  URL.createObjectURL = (_blob: Blob) => `blob:mock-${Math.random()}`
 }
 
 if (typeof URL.revokeObjectURL === 'undefined') {

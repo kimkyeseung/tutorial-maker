@@ -152,9 +152,6 @@ async function writeProjectJsonToFile(
   project: Omit<Project, 'appIcon'>,
   filePath: string
 ): Promise<void> {
-  // 페이지 단위로 청크 분할하여 직렬화
-  const chunks: string[] = []
-
   // 기본 프로젝트 정보
   const baseProject = {
     id: project.id,

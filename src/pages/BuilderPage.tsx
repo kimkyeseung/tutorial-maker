@@ -8,7 +8,7 @@ import type { Project, Page } from '../types/project'
 import { getAllProjects, saveProject, deleteProject, getAppIcon, createBlobURL } from '../utils/mediaStorage'
 import { validateAllPages } from '../utils/pageValidation'
 import { exportAsTutorial, exportProject, importProjectFromZip } from '../utils/projectExporter'
-import { buildStandaloneExecutable, BuildProgress, CompressionStats, BuildOptions } from '../utils/projectBuilder'
+import { buildStandaloneExecutable, BuildProgress, BuildOptions } from '../utils/projectBuilder'
 
 type View = 'list' | 'settings' | 'pages'
 
