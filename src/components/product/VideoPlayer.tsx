@@ -27,15 +27,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
   const [hasEnded, setHasEnded] = useState(false)
-  const [currentPlayCount, setCurrentPlayCount] = useState(0) // 현재 재생 횟수
+  const [currentPlayCount, setCurrentPlayCount] = useState(0) // ?�재 ?�생 ?�수
 
-  // 활성 상태가 되면 비디오 재생, 비활성화되면 일시정지
+  // ?�성 ?�태가 ?�면 비디???�생, 비활?�화?�면 ?�시?��?
   useEffect(() => {
     if (page.mediaType === 'video' && videoRef.current && mediaUrl) {
       if (isActive) {
         setHasEnded(false)
-        setCurrentPlayCount(0) // 재생 횟수 초기화
-        videoRef.current.currentTime = 0
+        setCurrentPlayCount(0) // ?�생 ?�수 초기??        videoRef.current.currentTime = 0
         videoRef.current.play().catch((err) => {
           console.error('Failed to play video:', err)
         })
@@ -45,14 +44,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   }, [isActive, page.mediaType, mediaUrl])
 
-  // 미디어 URL 변경 시 로드
+  // 미디??URL 변�???로드
   useEffect(() => {
     if (page.mediaType === 'video' && videoRef.current) {
       videoRef.current.load()
     }
   }, [mediaUrl, page.mediaType])
 
-  // 사용자 상호작용 이후 재생을 다시 시도 (빌드 후 자동재생 차단 대응)
+  // ?�용???�호?�용 ?�후 ?�생???�시 ?�도 (빌드 ???�동?�생 차단 ?�??
   useEffect(() => {
     if (
       page.mediaType !== 'video' ||
@@ -76,10 +75,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       const newCount = currentPlayCount + 1
 
       if (newCount >= targetCount) {
-        // 목표 재생 횟수에 도달하면 다음 페이지로 이동
+        // 목표 ?�생 ?�수???�달?�면 ?�음 ?�이지�??�동
         onVideoEnd()
       } else {
-        // 아직 재생 횟수가 남았으면 다시 재생
+        // ?�직 ?�생 ?�수가 ?�았?�면 ?�시 ?�생
         setCurrentPlayCount(newCount)
         setHasEnded(false)
         if (videoRef.current) {
@@ -88,7 +87,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         }
       }
     } else {
-      // loop 모드: 무한 반복 재생
+      // loop 모드: 무한 반복 ?�생
       if (videoRef.current) {
         videoRef.current.currentTime = 0
         videoRef.current.play()
@@ -117,14 +116,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         />
       )}
 
-      {/* 비디오 종료 상태 표시 (디버깅용) */}
+      {/* 비디??종료 ?�태 ?�시 (?�버깅용) */}
       {hasEnded && page.playType === 'loop' && (
         <div className='absolute right-4 top-4 rounded bg-green-500 px-3 py-1 text-sm text-white opacity-50'>
-          반복 재생 중
-        </div>
+          반복 ?�생 �?        </div>
       )}
 
-      {/* 버튼 렌더링 */}
+      {/* 버튼 ?�더�?*/}
       {page.buttons.map((button) => {
         const isVisible =
           button.showTiming === 'immediate' ||
@@ -141,7 +139,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         )
       })}
 
-      {/* 터치 영역 렌더링 */}
+      {/* ?�치 ?�역 ?�더�?*/}
       {page.touchAreas.map((touchArea) => {
         const isVisible =
           touchArea.showTiming === 'immediate' ||
