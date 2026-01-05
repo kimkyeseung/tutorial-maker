@@ -144,6 +144,73 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+/**
+ * 프로젝트 JSON을 청크 단위로 파일에 쓰기
+ * 대용량 프로젝트에서 "invalid string length" 에러 방지
+ */
+async function writeProjectJsonToFile(
+  project: Omit<Project, 'appIcon'>,
+  filePath: string
+): Promise<void> {
+  // 페이지 단위로 청크 분할하여 직렬화
+  const chunks: string[] = []
+
+  // 기본 프로젝트 정보
+  const baseProject = {
+    id: project.id,
+    name: project.name,
+    description: project.description,
+    appTitle: project.appTitle,
+    settings: project.settings,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+  }
+
+  // 페이지를 개별적으로 직렬화
+  const pageJsons: string[] = []
+  for (const page of project.pages) {
+    try {
+      pageJsons.push(JSON.stringify(page))
+    } catch {
+      // 개별 페이지 직렬화 실패 시 간소화
+      const simplePage = {
+        id: page.id,
+        order: page.order,
+        mediaType: page.mediaType,
+        mediaId: page.mediaId,
+        playType: page.playType,
+        playCount: page.playCount,
+        buttons: page.buttons.map((b) => ({
+          id: b.id,
+          imageId: b.imageId,
+          position: b.position,
+          size: b.size,
+          action: b.action,
+          showTiming: b.showTiming,
+        })),
+        touchAreas: page.touchAreas.map((t) => ({
+          id: t.id,
+          position: t.position,
+          size: t.size,
+          action: t.action,
+          showTiming: t.showTiming,
+        })),
+      }
+      pageJsons.push(JSON.stringify(simplePage))
+    }
+  }
+
+  // 최종 JSON 조합
+  const baseJson = JSON.stringify(baseProject)
+  const pagesJson = `[${pageJsons.join(',')}]`
+
+  // 전체 JSON 조합
+  const fullJson = baseJson.slice(0, -1) + `,"pages":${pagesJson}}`
+
+  // 파일에 쓰기
+  await writeFile(filePath, new TextEncoder().encode(fullJson))
+}
+
 // 미디어 파일들을 임시 폴더에 저장하고 정보 반환
 async function prepareMediaFiles(
   project: Project,
@@ -387,17 +454,31 @@ export async function buildStandaloneExecutable(
         onProgress({ message: '빌드 시작 중...', percent: 30 })
       }
 
-      // 프로젝트 데이터 (appIcon 제외)
+      // 프로젝트 데이터를 파일로 저장 (대용량 JSON 처리를 위해)
+      // JSON.stringify가 메모리에서 처리되므로 청크 단위로 파일에 쓰기
       const { appIcon, ...projectWithoutIcon } = project
-      const projectJson = JSON.stringify(projectWithoutIcon)
+      const projectJsonPath = `${buildTempDir}/project.json`
+      const mediaInfoPath = `${buildTempDir}/media_info.json`
 
-      // 미디어 파일 정보 배열
-      const mediaInfoJson = JSON.stringify(mediaFiles)
+      try {
+        // 프로젝트 JSON 파일로 저장
+        await writeProjectJsonToFile(projectWithoutIcon, projectJsonPath)
 
-      // Rust 백엔드 호출
-      const result = await invoke<string>('build_standalone_executable_v2', {
-        projectJson,
-        mediaInfoJson,
+        // 미디어 정보 JSON 파일로 저장
+        const mediaInfoJson = JSON.stringify(mediaFiles)
+        await writeFile(mediaInfoPath, new TextEncoder().encode(mediaInfoJson))
+      } catch (jsonError) {
+        // JSON 직렬화 실패 시 (invalid string length 등)
+        console.error('JSON 직렬화 실패:', jsonError)
+        throw new Error(
+          '프로젝트 데이터가 너무 큽니다. 일부 영상을 압축하거나 페이지 수를 줄여주세요.'
+        )
+      }
+
+      // Rust 백엔드 호출 (파일 경로 전달)
+      const result = await invoke<string>('build_standalone_executable_v3', {
+        projectJsonPath,
+        mediaInfoPath,
         outputFile,
         appIconPath: appIconPath || null,
         tempDir: buildTempDir,

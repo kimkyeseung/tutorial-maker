@@ -919,6 +919,97 @@ fn get_media_manifest() -> Result<String, String> {
         .map_err(|e| format!("매니페스트 직렬화 실패: {}", e))
 }
 
+// V3: 파일 경로 기반 빌드 (대용량 프로젝트 지원, invalid string length 에러 방지)
+#[tauri::command]
+async fn build_standalone_executable_v3(
+    app: tauri::AppHandle,
+    project_json_path: String,
+    media_info_path: String,
+    output_file: String,
+    app_icon_path: Option<String>,
+    temp_dir: String,
+) -> Result<String, String> {
+    let output_path = PathBuf::from(&output_file);
+    let output_dir = output_path.parent()
+        .ok_or_else(|| "출력 디렉토리를 찾을 수 없습니다.".to_string())?;
+    let temp_build_dir = PathBuf::from(&temp_dir);
+
+    // 출력 디렉토리 생성
+    fs::create_dir_all(output_dir).map_err(|e| e.to_string())?;
+
+    let _ = app.emit("build-progress", "프로젝트 빌드 준비 중...");
+
+    // 프로젝트 JSON 파일에서 직접 읽기
+    let project_json = fs::read_to_string(&project_json_path)
+        .map_err(|e| format!("프로젝트 JSON 읽기 실패: {}", e))?;
+
+    // 미디어 정보 파일에서 읽기
+    let media_info_json = fs::read_to_string(&media_info_path)
+        .map_err(|e| format!("미디어 정보 읽기 실패: {}", e))?;
+
+    let media_files: Vec<MediaBuildInfo> = serde_json::from_str(&media_info_json)
+        .map_err(|e| format!("미디어 정보 파싱 실패: {}", e))?;
+
+    // 앱 아이콘 ICO 파일 생성 (임시 폴더에)
+    let mut custom_icon_path: Option<PathBuf> = None;
+
+    if let Some(icon_path) = &app_icon_path {
+        let source_icon = PathBuf::from(icon_path);
+        if source_icon.exists() {
+            let _ = app.emit("build-progress", "앱 아이콘 변환 중...");
+
+            let ico_path = temp_build_dir.join("custom_icon.ico");
+            match create_ico_file(&source_icon, &ico_path) {
+                Ok(_) => {
+                    custom_icon_path = Some(ico_path);
+                }
+                Err(e) => {
+                    let _ = app.emit("build-progress", &format!("아이콘 변환 경고: {} (기본 아이콘 사용)", e));
+                }
+            }
+        }
+    }
+
+    // 1. 먼저 번들된 템플릿 exe 찾기
+    // 2. 없으면 개발 환경에서 빌드
+    let source_exe = if let Some(template_path) = find_bundled_template(&app) {
+        let msg = format!("템플릿 실행 파일 발견: {}", template_path.display());
+        let _ = app.emit("build-progress", &msg);
+        template_path
+    } else {
+        let _ = app.emit("build-progress", "템플릿을 찾을 수 없어 개발 환경에서 빌드합니다...");
+        build_from_source(&app)?
+    };
+
+    // 템플릿 exe 복사
+    fs::copy(&source_exe, &output_path).map_err(|e| e.to_string())?;
+
+    // 커스텀 아이콘 적용
+    if let Some(ico_path) = &custom_icon_path {
+        let _ = app.emit("build-progress", "앱 아이콘 적용 중...");
+        match change_exe_icon(&output_path, ico_path) {
+            Ok(_) => {
+                let _ = app.emit("build-progress", "앱 아이콘 적용 완료!");
+            }
+            Err(e) => {
+                let _ = app.emit("build-progress", &format!("아이콘 적용 실패 (기본 아이콘 사용): {}", e));
+            }
+        }
+    }
+
+    // V2 데이터 append: 미디어 바이너리 + project.json + manifest
+    let _ = app.emit("build-progress", "프로젝트 데이터 내장 중...");
+
+    append_binary_data_v2(&output_path, &project_json, &media_files)?;
+
+    // 임시 빌드 디렉토리 삭제
+    let _ = fs::remove_dir_all(&temp_build_dir);
+
+    let _ = app.emit("build-progress", "빌드 완료!");
+
+    Ok(output_file)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   let mut builder = tauri::Builder::default()
@@ -936,7 +1027,7 @@ pub fn run() {
       }
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![build_project, get_temp_path, build_standalone_executable, build_standalone_executable_v2, read_project_file, read_project_file_v2, get_media_path, read_media_file, read_embedded_media, get_media_manifest]);
+    .invoke_handler(tauri::generate_handler![build_project, get_temp_path, build_standalone_executable, build_standalone_executable_v2, build_standalone_executable_v3, read_project_file, read_project_file_v2, get_media_path, read_media_file, read_embedded_media, get_media_manifest]);
 
   #[cfg(debug_assertions)]
   {
