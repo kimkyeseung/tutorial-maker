@@ -654,7 +654,7 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview }) => {
                 />
               </div>
               <p className='mt-2 text-center text-sm text-gray-600'>
-                {buildProgress.percent || 0}%
+                {(buildProgress.percent || 0).toFixed(2)}%
               </p>
             </div>
 
@@ -666,16 +666,25 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview }) => {
             {/* 압축 정보 */}
             {buildProgress.compressionInfo && (
               <div className='mt-4 rounded-lg bg-gray-50 p-3 text-xs text-gray-600'>
+                {/* 영상 진행 현황 */}
+                {buildProgress.compressionInfo.totalVideos && buildProgress.compressionInfo.totalVideos > 0 && (
+                  <p className='mb-2 font-medium text-purple-600'>
+                    영상 압축 중... {buildProgress.compressionInfo.currentVideoIndex || 0}/{buildProgress.compressionInfo.totalVideos}
+                    {buildProgress.compressionInfo.videoPercent !== undefined && (
+                      <span className='ml-2'>({buildProgress.compressionInfo.videoPercent.toFixed(0)}%)</span>
+                    )}
+                  </p>
+                )}
                 <p>
-                  원본: {(buildProgress.compressionInfo.originalSize / (1024 * 1024)).toFixed(1)} MB
+                  원본: {(buildProgress.compressionInfo.originalSize / (1024 * 1024)).toFixed(2)} MB
                 </p>
                 {buildProgress.compressionInfo.compressedSize && (
                   <p className='text-green-600'>
-                    압축 후: {(buildProgress.compressionInfo.compressedSize / (1024 * 1024)).toFixed(1)} MB
+                    압축 후: {(buildProgress.compressionInfo.compressedSize / (1024 * 1024)).toFixed(2)} MB
                     {' ('}
-                    {Math.round(
+                    {(
                       (1 - buildProgress.compressionInfo.compressedSize / buildProgress.compressionInfo.originalSize) * 100
-                    )}
+                    ).toFixed(1)}
                     % 절약)
                   </p>
                 )}

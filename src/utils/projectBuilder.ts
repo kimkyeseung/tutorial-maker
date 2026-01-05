@@ -28,13 +28,19 @@ export interface BuildProgress {
     originalSize: number
     compressedSize?: number
     stage?: CompressionProgress['stage']
+    /** 현재 압축 중인 영상 번호 (1부터 시작) */
+    currentVideoIndex?: number
+    /** 전체 영상 수 */
+    totalVideos?: number
+    /** 영상 압축 진행률 (0-100) */
+    videoPercent?: number
   }
 }
 
 export interface BuildOptions {
   /** 비디오 압축 활성화 (기본값: true) */
   enableCompression?: boolean
-  /** 압축 품질 (기본값: 'medium') */
+  /** 압축 품질 (기본값: 'high') */
   compressionQuality?: 'low' | 'medium' | 'high'
   /** 최대 해상도 (기본값: 1080) */
   maxResolution?: number
@@ -84,6 +90,8 @@ async function processVideoCompression(
   blob: Blob,
   mediaId: string,
   options: BuildOptions,
+  currentVideoIndex: number,
+  totalVideos: number,
   onProgress?: (progress: BuildProgress) => void
 ): Promise<Blob> {
   if (!options.enableCompression || !canCompress()) {
@@ -101,15 +109,19 @@ async function processVideoCompression(
       blob,
       {
         maxResolution: options.maxResolution || 1080,
-        quality: options.compressionQuality || 'medium',
+        quality: options.compressionQuality || 'high',
       },
       (progress) => {
         onProgress?.({
-          message: `영상 압축 중... ${progress.percent}%`,
+          message: `영상 압축 중... (${currentVideoIndex}/${totalVideos})`,
+          percent: progress.percent,
           compressionInfo: {
             fileId: mediaId,
             originalSize: blob.size,
             stage: progress.stage,
+            currentVideoIndex,
+            totalVideos,
+            videoPercent: progress.percent,
           },
         })
       }
@@ -118,11 +130,14 @@ async function processVideoCompression(
     // 압축이 효과적인 경우에만 압축된 파일 사용
     if (result.compressionRatio > 5) {
       onProgress?.({
-        message: `압축 완료: ${formatFileSize(blob.size)} → ${formatFileSize(result.compressedSize)}`,
+        message: `압축 완료 (${currentVideoIndex}/${totalVideos}): ${formatFileSize(blob.size)} → ${formatFileSize(result.compressedSize)}`,
         compressionInfo: {
           fileId: mediaId,
           originalSize: blob.size,
           compressedSize: result.compressedSize,
+          currentVideoIndex,
+          totalVideos,
+          videoPercent: 100,
         },
       })
       return result.blob
@@ -238,6 +253,10 @@ async function prepareMediaFiles(
   const totalMedia = mediaIdArray.length + (project.appIcon ? 1 : 0)
   const mediaFiles: MediaBuildInfo[] = []
 
+  // 비디오 파일 수 계산
+  const videoIds = mediaIdArray.filter((id) => mediaTypeMap.get(id) === 'video')
+  const totalVideos = videoIds.length
+
   // 압축 통계
   const compressionStats: CompressionStats = {
     totalOriginalSize: 0,
@@ -245,6 +264,9 @@ async function prepareMediaFiles(
     compressedCount: 0,
     skippedCount: 0,
   }
+
+  // 현재 처리 중인 비디오 인덱스
+  let currentVideoIndex = 0
 
   // 미디어 임시 폴더 생성
   const mediaDir = `${tempDir}/media`
@@ -300,15 +322,27 @@ async function prepareMediaFiles(
 
         // 비디오인 경우 압축 처리
         if (mediaType === 'video' && options.enableCompression !== false) {
+          currentVideoIndex++
+          const currentIdx = currentVideoIndex
+
           onProgress?.({
-            message: `영상 분석 중... (${i + 1}/${mediaIdArray.length})`,
+            message: `영상 압축 중... (${currentIdx}/${totalVideos})`,
             percent: Math.round(((i + 0.5) / totalMedia) * 30),
+            compressionInfo: {
+              fileId: mediaId,
+              originalSize: originalSize,
+              currentVideoIndex: currentIdx,
+              totalVideos: totalVideos,
+              videoPercent: 0,
+            },
           })
 
           const compressedBlob = await processVideoCompression(
             media.blob,
             mediaId,
             options,
+            currentIdx,
+            totalVideos,
             onProgress
           )
 

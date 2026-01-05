@@ -44,11 +44,11 @@ export interface CompressionResult {
   duration: number
 }
 
-/** 품질 프리셋에 따른 기본 비트레이트 */
+/** 품질 프리셋에 따른 기본 비트레이트 (튜토리얼 영상에 최적화) */
 const QUALITY_BITRATES: Record<string, number> = {
-  low: 1_000_000, // 1 Mbps
-  medium: 2_000_000, // 2 Mbps
-  high: 4_000_000, // 4 Mbps
+  low: 3_000_000, // 3 Mbps - 기본 압축
+  medium: 5_000_000, // 5 Mbps - 균형 잡힌 품질
+  high: 8_000_000, // 8 Mbps - 고품질 (화질 저하 최소화)
 }
 
 /**
