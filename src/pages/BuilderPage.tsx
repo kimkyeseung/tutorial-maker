@@ -8,6 +8,7 @@ import type { Project, Page } from '../types/project'
 import { getAllProjects, saveProject, deleteProject, getAppIcon, createBlobURL } from '../utils/mediaStorage'
 import { validateAllPages } from '../utils/pageValidation'
 import { exportAsTutorial, exportProject, importProjectFromZip } from '../utils/projectExporter'
+import { buildStandaloneExecutable, BuildProgress, CompressionStats } from '../utils/projectBuilder'
 
 type View = 'list' | 'settings' | 'pages'
 type PagesViewMode = 'list' | 'flowmap'
@@ -34,6 +35,7 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelect
   }>({ isOpen: false, projectId: '', projectName: '' })
   const [exportConfirm, setExportConfirm] = useState(false)
   const [unsavedChangesConfirm, setUnsavedChangesConfirm] = useState(false)
+  const [buildProgress, setBuildProgress] = useState<BuildProgress | null>(null)
 
   useEffect(() => {
     loadProjects()
@@ -257,16 +259,18 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelect
     }
   }
 
-  // 실행 파일 빌드 (현재는 .tutorial 내보내기로 대체)
+  // 실행 파일 빌드 (압축 포함)
   const handleBuild = async () => {
     if (!selectedProject) return
     setIsBuilding(true)
+    setBuildProgress({ message: '빌드 준비 중...', percent: 0 })
 
     try {
       // 페이지 유효성 검사
       if (selectedProject.pages.length === 0) {
         alert('❌ 빌드할 수 없습니다.\n\n페이지가 없습니다. 최소 1개 이상의 페이지를 추가해주세요.')
         setIsBuilding(false)
+        setBuildProgress(null)
         return
       }
 
@@ -277,27 +281,56 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelect
           .join('\n')
         alert(`❌ 빌드할 수 없습니다.\n\n다음 페이지에 문제가 있습니다:\n${errorMessages}`)
         setIsBuilding(false)
+        setBuildProgress(null)
         return
       }
 
       // 프로젝트 저장 먼저 수행
       await saveProject(selectedProject)
 
-      // .tutorial 파일로 내보내기
-      const success = await exportAsTutorial(selectedProject)
+      // 실행 파일 빌드 (압축 옵션 포함)
+      const result = await buildStandaloneExecutable(
+        selectedProject,
+        (progress) => {
+          setBuildProgress(progress)
+        },
+        {
+          enableCompression: true,
+          compressionQuality: 'medium',
+          maxResolution: 1080,
+        }
+      )
 
-      if (success) {
-        alert(
-          '✅ 튜토리얼 파일이 성공적으로 생성되었습니다!\n\n.tutorial 파일이 다운로드 폴더에 저장되었습니다.'
-        )
+      if (result.success) {
+        let message = '✅ 실행 파일이 성공적으로 생성되었습니다!'
+
+        // 압축 통계 표시
+        if (result.compressionStats && result.compressionStats.compressedCount > 0) {
+          const stats = result.compressionStats
+          const savedSize = stats.totalOriginalSize - stats.totalCompressedSize
+          const savedPercent = Math.round((savedSize / stats.totalOriginalSize) * 100)
+          const formatSize = (bytes: number) => {
+            if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+            return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+          }
+          message += `\n\n📊 압축 결과:\n`
+          message += `• ${stats.compressedCount}개 영상 압축됨\n`
+          message += `• 원본: ${formatSize(stats.totalOriginalSize)}\n`
+          message += `• 압축 후: ${formatSize(stats.totalCompressedSize)}\n`
+          message += `• 절약: ${formatSize(savedSize)} (${savedPercent}%)`
+        }
+
+        alert(message)
       } else {
-        alert('❌ 빌드에 실패했습니다.')
+        // 사용자가 취소한 경우
+        console.log('빌드가 취소되었습니다.')
       }
     } catch (error) {
       console.error('Build failed:', error)
       alert('❌ 빌드에 실패했습니다.\n\n오류: ' + (error as Error).message)
     } finally {
       setIsBuilding(false)
+      setBuildProgress(null)
     }
   }
 
@@ -499,6 +532,53 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelect
             <div className='mb-4 text-4xl'>📦</div>
             <h3 className='mb-2 text-xl font-bold'>내보내는 중...</h3>
             <p className='text-sm text-gray-600'>잠시만 기다려주세요</p>
+          </div>
+        </div>
+      )}
+
+      {/* 빌드 진행 중 표시 */}
+      {isBuilding && buildProgress && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50'>
+          <div className='mx-4 w-full max-w-md rounded-lg bg-white p-8'>
+            <div className='mb-4 text-center text-4xl'>🔨</div>
+            <h3 className='mb-4 text-center text-xl font-bold'>빌드 중...</h3>
+
+            {/* 진행률 바 */}
+            <div className='mb-4'>
+              <div className='h-3 w-full rounded-full bg-gray-200'>
+                <div
+                  className='h-3 rounded-full bg-purple-600 transition-all duration-300'
+                  style={{ width: `${buildProgress.percent || 0}%` }}
+                />
+              </div>
+              <p className='mt-2 text-center text-sm text-gray-600'>
+                {buildProgress.percent || 0}%
+              </p>
+            </div>
+
+            {/* 현재 작업 */}
+            <p className='text-center text-sm text-gray-700'>
+              {buildProgress.message}
+            </p>
+
+            {/* 압축 정보 */}
+            {buildProgress.compressionInfo && (
+              <div className='mt-4 rounded-lg bg-gray-50 p-3 text-xs text-gray-600'>
+                <p>
+                  원본: {(buildProgress.compressionInfo.originalSize / (1024 * 1024)).toFixed(1)} MB
+                </p>
+                {buildProgress.compressionInfo.compressedSize && (
+                  <p className='text-green-600'>
+                    압축 후: {(buildProgress.compressionInfo.compressedSize / (1024 * 1024)).toFixed(1)} MB
+                    {' ('}
+                    {Math.round(
+                      (1 - buildProgress.compressionInfo.compressedSize / buildProgress.compressionInfo.originalSize) * 100
+                    )}
+                    % 절약)
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

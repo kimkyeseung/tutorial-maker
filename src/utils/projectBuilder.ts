@@ -2,8 +2,15 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeFile, mkdir } from '@tauri-apps/plugin-fs'
+
 import type { Project, MediaBuildInfo } from '../types/project'
 import { getAppIcon, getButtonImage, getMediaFile } from '../utils/mediaStorage'
+import {
+  canCompress,
+  compressVideo,
+  analyzeVideo,
+  CompressionProgress,
+} from '../utils/videoCompressor'
 
 // Tauri 환경 확인 함수
 function isTauriEnvironment(): boolean {
@@ -15,6 +22,22 @@ export interface BuildProgress {
   percent?: number
   step?: number
   totalSteps?: number
+  /** 압축 관련 정보 */
+  compressionInfo?: {
+    fileId: string
+    originalSize: number
+    compressedSize?: number
+    stage?: CompressionProgress['stage']
+  }
+}
+
+export interface BuildOptions {
+  /** 비디오 압축 활성화 (기본값: true) */
+  enableCompression?: boolean
+  /** 압축 품질 (기본값: 'medium') */
+  compressionQuality?: 'low' | 'medium' | 'high'
+  /** 최대 해상도 (기본값: 1080) */
+  maxResolution?: number
 }
 
 // MIME 타입 추출
@@ -37,12 +60,97 @@ function getExtension(mimeType: string): string {
   return map[mimeType] || ''
 }
 
+/**
+ * 비디오 압축이 필요한지 확인
+ */
+async function needsVideoCompression(blob: Blob): Promise<boolean> {
+  try {
+    const metadata = await analyzeVideo(blob)
+    // 해상도가 1080p 초과이거나 비트레이트가 2.5Mbps 초과인 경우 압축 필요
+    return (
+      metadata.width > 1080 ||
+      metadata.height > 1080 ||
+      metadata.estimatedBitrate > 2_500_000
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 비디오 압축 처리
+ */
+async function processVideoCompression(
+  blob: Blob,
+  mediaId: string,
+  options: BuildOptions,
+  onProgress?: (progress: BuildProgress) => void
+): Promise<Blob> {
+  if (!options.enableCompression || !canCompress()) {
+    return blob
+  }
+
+  try {
+    const needsCompression = await needsVideoCompression(blob)
+
+    if (!needsCompression) {
+      return blob
+    }
+
+    const result = await compressVideo(
+      blob,
+      {
+        maxResolution: options.maxResolution || 1080,
+        quality: options.compressionQuality || 'medium',
+      },
+      (progress) => {
+        onProgress?.({
+          message: `영상 압축 중... ${progress.percent}%`,
+          compressionInfo: {
+            fileId: mediaId,
+            originalSize: blob.size,
+            stage: progress.stage,
+          },
+        })
+      }
+    )
+
+    // 압축이 효과적인 경우에만 압축된 파일 사용
+    if (result.compressionRatio > 5) {
+      onProgress?.({
+        message: `압축 완료: ${formatFileSize(blob.size)} → ${formatFileSize(result.compressedSize)}`,
+        compressionInfo: {
+          fileId: mediaId,
+          originalSize: blob.size,
+          compressedSize: result.compressedSize,
+        },
+      })
+      return result.blob
+    }
+
+    return blob
+  } catch (error) {
+    console.warn(`비디오 압축 실패 (${mediaId}), 원본 사용:`, error)
+    return blob
+  }
+}
+
+/**
+ * 파일 크기 포맷팅
+ */
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 // 미디어 파일들을 임시 폴더에 저장하고 정보 반환
 async function prepareMediaFiles(
   project: Project,
   tempDir: string,
+  options: BuildOptions = {},
   onProgress?: (progress: BuildProgress) => void
-): Promise<{ mediaFiles: MediaBuildInfo[]; appIconPath?: string }> {
+): Promise<{ mediaFiles: MediaBuildInfo[]; appIconPath?: string; compressionStats: CompressionStats }> {
   const mediaIds = new Set<string>()
   const mediaTypeMap = new Map<string, 'video' | 'image'>()
 
@@ -65,6 +173,14 @@ async function prepareMediaFiles(
   const mediaIdArray = Array.from(mediaIds)
   const totalMedia = mediaIdArray.length + (project.appIcon ? 1 : 0)
   const mediaFiles: MediaBuildInfo[] = []
+
+  // 압축 통계
+  const compressionStats: CompressionStats = {
+    totalOriginalSize: 0,
+    totalCompressedSize: 0,
+    compressedCount: 0,
+    skippedCount: 0,
+  }
 
   // 미디어 임시 폴더 생성
   const mediaDir = `${tempDir}/media`
@@ -115,12 +231,44 @@ async function prepareMediaFiles(
 
       if (media && media.blob) {
         const mediaType = mediaTypeMap.get(mediaId) || 'image'
-        const mimeType = getMimeType(media.blob, mediaType)
+        let blobToSave = media.blob
+        const originalSize = media.blob.size
+
+        // 비디오인 경우 압축 처리
+        if (mediaType === 'video' && options.enableCompression !== false) {
+          onProgress?.({
+            message: `영상 분석 중... (${i + 1}/${mediaIdArray.length})`,
+            percent: Math.round(((i + 0.5) / totalMedia) * 30),
+          })
+
+          const compressedBlob = await processVideoCompression(
+            media.blob,
+            mediaId,
+            options,
+            onProgress
+          )
+
+          if (compressedBlob !== media.blob) {
+            blobToSave = compressedBlob
+            compressionStats.compressedCount++
+            compressionStats.totalOriginalSize += originalSize
+            compressionStats.totalCompressedSize += compressedBlob.size
+          } else {
+            compressionStats.skippedCount++
+            compressionStats.totalOriginalSize += originalSize
+            compressionStats.totalCompressedSize += originalSize
+          }
+        } else {
+          compressionStats.totalOriginalSize += originalSize
+          compressionStats.totalCompressedSize += originalSize
+        }
+
+        const mimeType = getMimeType(blobToSave, mediaType)
         const ext = getExtension(mimeType)
         const filePath = `${mediaDir}/${mediaId}${ext}`
 
         // Blob을 파일로 저장
-        const arrayBuffer = await media.blob.arrayBuffer()
+        const arrayBuffer = await blobToSave.arrayBuffer()
         await writeFile(filePath, new Uint8Array(arrayBuffer))
 
         mediaFiles.push({
@@ -135,14 +283,22 @@ async function prepareMediaFiles(
     }
   }
 
-  return { mediaFiles, appIconPath }
+  return { mediaFiles, appIconPath, compressionStats }
+}
+
+export interface CompressionStats {
+  totalOriginalSize: number
+  totalCompressedSize: number
+  compressedCount: number
+  skippedCount: number
 }
 
 // 독립 실행 파일 빌드 (각 프로젝트마다 별도의 exe)
 export async function buildStandaloneExecutable(
   project: Project,
-  onProgress?: (progress: BuildProgress) => void
-): Promise<boolean> {
+  onProgress?: (progress: BuildProgress) => void,
+  options: BuildOptions = {}
+): Promise<{ success: boolean; compressionStats?: CompressionStats }> {
   // Tauri 환경 확인
   if (!isTauriEnvironment()) {
     console.error('Tauri internals not found:', {
@@ -175,7 +331,7 @@ export async function buildStandaloneExecutable(
     })
 
     if (!outputFile) {
-      return false
+      return { success: false }
     }
 
     // 진행 상황 리스너 등록 (Rust에서 오는 이벤트)
@@ -203,12 +359,29 @@ export async function buildStandaloneExecutable(
         onProgress({ message: '미디어 파일 준비 시작...', percent: 5 })
       }
 
-      // 미디어 파일들을 임시 폴더에 저장
-      const { mediaFiles, appIconPath } = await prepareMediaFiles(
+      // 미디어 파일들을 임시 폴더에 저장 (압축 포함)
+      const { mediaFiles, appIconPath, compressionStats } = await prepareMediaFiles(
         project,
         buildTempDir,
+        options,
         onProgress
       )
+
+      // 압축 결과 로그
+      if (compressionStats.compressedCount > 0) {
+        const savedSize = compressionStats.totalOriginalSize - compressionStats.totalCompressedSize
+        const savedPercent = Math.round((savedSize / compressionStats.totalOriginalSize) * 100)
+        console.log(
+          `압축 완료: ${compressionStats.compressedCount}개 영상, ` +
+          `${formatFileSize(compressionStats.totalOriginalSize)} → ${formatFileSize(compressionStats.totalCompressedSize)} ` +
+          `(${savedPercent}% 절약)`
+        )
+
+        onProgress?.({
+          message: `압축 완료: ${formatFileSize(savedSize)} 절약 (${savedPercent}%)`,
+          percent: 30,
+        })
+      }
 
       if (onProgress) {
         onProgress({ message: '빌드 시작 중...', percent: 30 })
@@ -235,7 +408,7 @@ export async function buildStandaloneExecutable(
       }
 
       console.log('독립 실행 파일 빌드 완료:', result)
-      return true
+      return { success: true, compressionStats }
     } finally {
       unlisten()
     }
