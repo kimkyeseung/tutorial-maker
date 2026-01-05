@@ -295,6 +295,34 @@ fn get_temp_path(relative_path: String) -> Result<String, String> {
     Ok(full_path.to_string_lossy().to_string())
 }
 
+/// exe 파일에 내장된 프로젝트 데이터가 있는지 확인
+#[tauri::command]
+fn has_embedded_project() -> bool {
+    let current_exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(_) => return false,
+    };
+
+    // V2 매니페스트 확인 먼저
+    if read_manifest_from_exe(&current_exe).is_ok() {
+        return true;
+    }
+
+    // V1 데이터 확인
+    if read_data_from_exe(&current_exe).is_ok() {
+        return true;
+    }
+
+    // project.json 파일 확인 (개발 모드 호환)
+    if let Some(exe_dir) = current_exe.parent() {
+        if exe_dir.join("project.json").exists() {
+            return true;
+        }
+    }
+
+    false
+}
+
 #[tauri::command]
 fn read_project_file() -> Result<String, String> {
     // 실행 파일에서 내장된 프로젝트 데이터 읽기
@@ -1027,7 +1055,7 @@ pub fn run() {
       }
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![build_project, get_temp_path, build_standalone_executable, build_standalone_executable_v2, build_standalone_executable_v3, read_project_file, read_project_file_v2, get_media_path, read_media_file, read_embedded_media, get_media_manifest]);
+    .invoke_handler(tauri::generate_handler![build_project, get_temp_path, has_embedded_project, build_standalone_executable, build_standalone_executable_v2, build_standalone_executable_v3, read_project_file, read_project_file_v2, get_media_path, read_media_file, read_embedded_media, get_media_manifest]);
 
   #[cfg(debug_assertions)]
   {

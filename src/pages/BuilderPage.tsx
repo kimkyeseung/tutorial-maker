@@ -22,10 +22,9 @@ type PagesViewMode = 'list' | 'flowmap'
 
 interface BuilderPageProps {
   onPreview?: (projectId: string) => void
-  onBackToModeSelection?: () => void
 }
 
-const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelection }) => {
+const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview }) => {
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [currentView, setCurrentView] = useState<View>('list')
@@ -609,18 +608,7 @@ const BuilderPage: React.FC<BuilderPageProps> = ({ onPreview, onBackToModeSelect
       <header className='bg-white shadow-sm'>
         <div className='mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8'>
           <div className='flex items-center justify-between'>
-            <div className='flex items-center gap-4'>
-              {onBackToModeSelection && (
-                <button
-                  onClick={onBackToModeSelection}
-                  className='flex items-center gap-1 text-gray-600 hover:text-gray-800'
-                  title='모드 선택으로'
-                >
-                  ← 홈
-                </button>
-              )}
-              <h1 className='text-2xl font-bold text-gray-900'>Tutorial Maker</h1>
-            </div>
+            <h1 className='text-2xl font-bold text-gray-900'>Tutorial Maker</h1>
             <div className='flex gap-2'>
               <button
                 onClick={handleImportProject}

@@ -43,16 +43,26 @@ export function useProductProject(projectId?: string) {
 
   const loadProjectData = async () => {
     try {
-      const isProductMode = import.meta.env.VITE_APP_MODE === 'product'
+      // Tauri 환경에서 내장 프로젝트가 있는지 확인
+      let hasEmbeddedProject = false
 
-      if (isProductMode) {
-        // 프로덕트 모드: exe에서 바이너리 미디어 로드
+      if ('__TAURI_INTERNALS__' in window) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core')
+          hasEmbeddedProject = await invoke<boolean>('has_embedded_project')
+        } catch (e) {
+          console.log('Failed to check embedded project:', e)
+        }
+      }
+
+      // 내장 프로젝트가 있으면 프로덕트 모드로 로드
+      if (hasEmbeddedProject && !projectId) {
         await loadProductModeData()
         setIsLoading(false)
         return
       }
 
-      // 개발 모드: IndexedDB에서 로드
+      // 개발 모드 또는 미리보기: IndexedDB에서 로드
       if (!projectId) {
         console.error('No project ID provided for preview')
         setIsLoading(false)
